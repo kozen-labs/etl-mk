@@ -1,3 +1,6 @@
+# Session planning (local only — not for version control)
+tmp/
+
 # Logs
 logs
 *.log

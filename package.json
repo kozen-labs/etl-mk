@@ -1,7 +1,7 @@
 {
   "name": "@kozen/etl-mk",
   "version": "1.0.0",
-  "description": "Executor of Kafka to MongoDB ETL (Extract, Transform, Load) and vice versa",
+  "description": "Bi-directional MongoDB ↔ Kafka ETL pipeline module for the Kozen framework",
   "homepage": "https://github.com/kozen-labs/etl-mk#readme",
   "bugs": {
     "url": "https://github.com/kozen-labs/etl-mk/issues"
@@ -12,12 +12,35 @@
   },
   "license": "ISC",
   "author": "",
-  "type": "commonjs",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/*",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "build": "tsc && npm run copy:assets",
+    "copy:assets": "copyfiles -u 1 \"src/**/*.json\" \"src/**/*.txt\" dist/",
+    "start": "npx kozen --config=cfg/config.json",
+    "dev": "ts-node node_modules/@kozen/engine/dist/bin/kozen.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@kozen/trigger": "^1.0.7"
+    "@kozen/engine": "^1.1.15",
+    "@kozen/trigger": "^1.0.7",
+    "kafkajs": "2.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "copyfiles": "^2.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
