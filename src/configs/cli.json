@@ -1,0 +1,13 @@
+{
+  "etl-mk:cli": {
+    "target": "EtlCLIController",
+    "type": "class",
+    "lifetime": "transient",
+    "path": "controllers",
+    "dependencies": [
+      { "key": "assistant",    "target": "IoC",              "type": "ref" },
+      { "key": "logger",       "target": "logger:service",   "type": "ref" },
+      { "key": "srvPipeline",  "target": "etl-mk:pipeline",  "type": "ref" }
+    ]
+  }
+}

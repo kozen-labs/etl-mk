@@ -1,0 +1,4 @@
+{
+  "moduleLoad": "@kozen/etl-mk",
+  "action": "etl:start"
+}
