@@ -346,12 +346,15 @@ The current `package.json` entry point (`"main": "index.js"`) will be updated to
 
 ## 7. Alternatives considered
 
-### Alternative A — Rewrite ChangeStreamService from scratch instead of using `@kozen/trigger`
+### Alternative A — Call `ChangeStreamService.start()` directly and pass an `ITriggerDelegate`
 
-Gives more control over the internal API. **Rejected:** duplicates several hundred lines of
-tested, production-grade change stream management code. `@kozen/trigger`'s
-`ChangeStreamService` is already battle-tested; consuming it as a dependency is the correct
-approach and keeps this module thin.
+`ChangeStreamService.start()` accepts an IoC-resolved delegate and manages the change stream
+lifecycle. **Rejected:** `ChangeStreamService.onChange()` discards the handler return value
+(`typeof handler === 'function' && await handler.apply(this, [change, tools])`), so it cannot
+pass a payload to the Kafka producer. Extending the class and overriding `onChange()` was
+considered but adds complexity without benefit: the change stream setup is only ~20 lines of
+`MongoClient` code. `MongoToKafkaService` uses `MongoClient` directly and reuses the
+`@kozen/trigger` `ITriggerDelegate` and `ITriggerTools` interfaces as the public contract.
 
 ### Alternative B — Expose `kafkajs` client directly in `IEtlTools` instead of wrapping it
 
