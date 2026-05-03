@@ -1,4 +1,4 @@
-# 🔄 @kozen/etl-mk — Bi-directional MongoDB ↔ Kafka ETL
+# 🔄 Kozen ETL MongoDB/Kafka — Bi-directional MongoDB ↔ Kafka ETL
 
 `@kozen/etl-mk` is a [Kozen](https://github.com/kozen-labs) module that connects MongoDB change streams to Kafka topics and Kafka topics to MongoDB collections. It eliminates the boilerplate of writing change-stream listeners, Kafka producers, and Kafka consumers by hand, replacing all of it with a single `.env` file and an optional delegate function.
 
@@ -296,12 +296,8 @@ The module entry point is [src/index.ts](src/index.ts). The compiled output is w
 
 ## 📚 References
 
-[1] MongoDB, Inc. "Change Streams." MongoDB Manual. https://www.mongodb.com/docs/manual/changeStreams/
-
-[2] Apache Software Foundation. "Apache Kafka Documentation." https://kafka.apache.org/documentation/
-
-[3] Tulios. "kafkajs — A Modern Apache Kafka Client for Node.js." GitHub. https://github.com/tulios/kafkajs
-
-[4] MongoDB Industry Solutions. "@kozen/trigger — Self-Hosted MongoDB Triggers." GitHub. https://github.com/mongodb-industry-solutions/kozen-trigger
-
-[5] MongoDB Industry Solutions. "@kozen/engine — Kozen Task Execution Framework." GitHub. https://github.com/kozen-labs/engine
+- [MongoDB Change Streams](https://www.mongodb.com/docs/manual/changeStreams/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [kafkajs — Kafka client for Node.js](https://github.com/tulios/kafkajs)
+- [@kozen/trigger — Self-hosted MongoDB triggers](https://github.com/mongodb-industry-solutions/kozen-trigger)
+- [@kozen/engine — Kozen Task Execution Framework](https://github.com/kozen-labs/engine)
