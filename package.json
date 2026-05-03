@@ -1,0 +1,20 @@
+{
+  "name": "@kozen/etl-mk",
+  "version": "1.0.0",
+  "description": "Executor of Kafka to MongoDB ETL (Extract, Transform, Load) and vice versa",
+  "homepage": "https://github.com/kozen-labs/etl-mk#readme",
+  "bugs": {
+    "url": "https://github.com/kozen-labs/etl-mk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kozen-labs/etl-mk.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
