@@ -16,15 +16,15 @@ Requires Node.js 18 or later. `kafkajs` and `mongodb` are bundled as runtime dep
 
 ## 🚀 Quick start
 
-### MongoDB → Kafka
+### MongoDB → Kafka (MK pipeline)
 
 ```bash
-ETL_MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/
-ETL_MONGO_DATABASE=mydb
-ETL_MONGO_COLLECTION=orders
-ETL_KAFKA_BROKERS=broker1:9092,broker2:9092
-ETL_KAFKA_TOPIC=orders.events
-ETL_SOURCE_DELEGATE_FILE=/app/delegates/orders.mjs
+ETL_MK_SOURCE_URI=mongodb+srv://user:pass@cluster.mongodb.net/
+ETL_MK_SOURCE_DATABASE=mydb
+ETL_MK_SOURCE_COLLECTION=orders
+ETL_MK_DESTINATION_BROKERS=broker1:9092,broker2:9092
+ETL_MK_DESTINATION_TOPIC=orders.events
+ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs
 KOZEN_LOG_LEVEL=INFO
 ```
 
@@ -32,22 +32,23 @@ KOZEN_LOG_LEVEL=INFO
 npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
 ```
 
-Every change on `orders` is transformed by the source delegate and published to `orders.events`.
+Every change on `orders` is transformed by the MK delegate and published to `orders.events`.
 
-### Kafka → MongoDB
+### Kafka → MongoDB (KM pipeline)
 
 ```bash
-ETL_MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/
-ETL_MONGO_DATABASE=mydb
-ETL_MONGO_COLLECTION=orders_archive
-ETL_KAFKA_BROKERS=broker1:9092,broker2:9092
-ETL_KAFKA_TOPIC=orders.events
-ETL_KAFKA_GROUP_ID=etl-mk-group
-ETL_DESTINATION_DELEGATE_FILE=/app/delegates/archive.mjs
+ETL_KM_SOURCE_BROKERS=broker1:9092,broker2:9092
+ETL_KM_SOURCE_TOPIC=orders.events
+ETL_KM_DESTINATION_URI=mongodb+srv://user:pass@cluster.mongodb.net/
+ETL_KM_DESTINATION_DATABASE=mydb
+ETL_KM_DESTINATION_COLLECTION=orders_archive
+ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs
 KOZEN_LOG_LEVEL=INFO
 ```
 
-Every message from `orders.events` is transformed by the destination delegate and written to `orders_archive`.
+Every message from `orders.events` is transformed by the KM delegate and written to `orders_archive`.
+
+Both pipelines can run simultaneously — configure `ETL_MK_*` and `ETL_KM_*` in the same `.env` file. Each direction operates independently and may use different MongoDB instances or Kafka clusters.
 
 Ready-to-use environment file templates are in [`cfg/`](cfg/).
 
@@ -55,37 +56,47 @@ Ready-to-use environment file templates are in [`cfg/`](cfg/).
 
 ## ⚙️ Configuration reference
 
-All variables have an equivalent CLI flag: `ETL_MONGO_URI` maps to `--mongo.uri`, `ETL_KAFKA_TOPIC` maps to `--kafka.topic`, and so on. For the full list run `etl:help`.
+Variables are prefixed by pipeline direction. `ETL_MK_*` configures MongoDB→Kafka; `ETL_KM_*` configures Kafka→MongoDB. For the full list of CLI flags run `etl:help`.
 
-### Connection
-
-| Variable | CLI flag | Default | Description |
-|---|---|---|---|
-| `ETL_MONGO_URI` | `--mongo.uri` | (required) | MongoDB connection string |
-| `ETL_MONGO_DATABASE` | `--mongo.database` | (required) | Database name |
-| `ETL_MONGO_COLLECTION` | `--mongo.collection` | (required) | Collection name |
-| `ETL_KAFKA_BROKERS` | `--kafka.brokers` | (required) | Comma-separated broker list |
-| `ETL_KAFKA_TOPIC` | `--kafka.topic` | (required) | Kafka topic |
-| `ETL_KAFKA_GROUP_ID` | `--kafka.groupId` | `etl-mk-group` | Consumer group ID |
-| `ETL_KAFKA_CLIENT_ID` | `--kafka.clientId` | `etl-mk` | Kafka client ID |
-| `ETL_KAFKA_SSL` | `--kafka.ssl` | `false` | Enable TLS |
-
-### Delegates
+### MK pipeline (MongoDB → Kafka)
 
 | Variable | CLI flag | Default | Description |
 |---|---|---|---|
-| `ETL_SOURCE_DELEGATE_FILE` | `--sourceDelegateFile` | (none) | Delegate path — enables MongoDB→Kafka |
-| `ETL_DESTINATION_DELEGATE_FILE` | `--destinationDelegateFile` | (none) | Delegate path — enables Kafka→MongoDB |
+| `ETL_MK_SOURCE_URI` | `--mk.source.uri` | (required) | MongoDB connection string |
+| `ETL_MK_SOURCE_DATABASE` | `--mk.source.database` | (required) | Database to watch |
+| `ETL_MK_SOURCE_COLLECTION` | `--mk.source.collection` | (required) | Collection to watch |
+| `ETL_MK_DESTINATION_BROKERS` | `--mk.destination.brokers` | (required) | Comma-separated broker list |
+| `ETL_MK_DESTINATION_TOPIC` | `--mk.destination.topic` | (required) | Kafka topic to publish to |
+| `ETL_MK_DESTINATION_CLIENT_ID` | `--mk.destination.clientId` | `etl-mk` | Kafka client ID |
+| `ETL_MK_DESTINATION_SSL` | `--mk.destination.ssl` | `false` | Enable TLS for Kafka |
+| `ETL_MK_DELEGATE_FILE` | `--mk.delegateFile` | (none) | Delegate path — enables this pipeline |
+| `ETL_MK_DELEGATE_KEY` | `--mk.delegateKey` | `etl-mk:delegate:source` | IoC key for delegate |
+| `ETL_MK_DLQ_TOPIC` | `--mk.dlqTopic` | `<topic>-dlq` | Dead-letter Kafka topic |
+
+### KM pipeline (Kafka → MongoDB)
+
+| Variable | CLI flag | Default | Description |
+|---|---|---|---|
+| `ETL_KM_SOURCE_BROKERS` | `--km.source.brokers` | (required) | Comma-separated broker list |
+| `ETL_KM_SOURCE_TOPIC` | `--km.source.topic` | (required) | Kafka topic to consume |
+| `ETL_KM_SOURCE_GROUP_ID` | `--km.source.groupId` | `etl-mk-group` | Consumer group ID |
+| `ETL_KM_SOURCE_CLIENT_ID` | `--km.source.clientId` | `etl-km` | Kafka client ID |
+| `ETL_KM_SOURCE_SSL` | `--km.source.ssl` | `false` | Enable TLS for Kafka |
+| `ETL_KM_DESTINATION_URI` | `--km.destination.uri` | (required) | MongoDB connection string |
+| `ETL_KM_DESTINATION_DATABASE` | `--km.destination.database` | (required) | Database to write to |
+| `ETL_KM_DESTINATION_COLLECTION` | `--km.destination.collection` | (required) | Collection to write to |
+| `ETL_KM_DELEGATE_FILE` | `--km.delegateFile` | (none) | Delegate path — enables this pipeline |
+| `ETL_KM_DELEGATE_KEY` | `--km.delegateKey` | `etl-mk:delegate:destination` | IoC key for delegate |
+| `ETL_KM_DESTINATION_WRITE_MODE` | `--km.writeMode` | `insert` | `insert` or `upsert` |
+| `ETL_KM_DLQ_TOPIC` | `--km.dlqTopic` | `<topic>-dlq` | Dead-letter Kafka topic |
+| `ETL_KM_RETRY_ATTEMPTS` | `--km.retryAttempts` | `3` | Retries before DLQ routing |
+| `ETL_KM_RETRY_DELAY_MS` | `--km.retryDelayMs` | `1000` | Initial backoff delay (ms) |
+
+### Common
+
+| Variable | CLI flag | Default | Description |
+|---|---|---|---|
 | `ETL_DELEGATE_TYPE` | `--delegateType` | auto-detect | `esm` or `cjs` |
-
-### Pipeline
-
-| Variable | CLI flag | Default | Description |
-|---|---|---|---|
-| `ETL_WRITE_MODE` | `--writeMode` | `insert` | `insert` or `upsert` |
-| `ETL_DLQ_TOPIC` | `--dlqTopic` | `<topic>-dlq` | Dead-letter Kafka topic |
-| `ETL_RETRY_ATTEMPTS` | `--retryAttempts` | `3` | Retries before DLQ routing |
-| `ETL_RETRY_DELAY_MS` | `--retryDelayMs` | `1000` | Initial backoff delay (ms) |
 | `KOZEN_LOG_LEVEL` | — | `INFO` | `DEBUG`, `INFO`, `WARN`, or `ERROR` |
 | `KOZEN_LOG_TYPE` | — | `object` | `object` or `json` |
 
@@ -147,9 +158,9 @@ Use `.mjs` for ESM delegates and `.cjs` for CommonJS. Set `ETL_DELEGATE_TYPE` to
 
 ## 🚨 Dead-letter handling
 
-When a delegate throws or a write fails after all retries, the failed event is routed to the dead-letter Kafka topic (`ETL_DLQ_TOPIC`, default `<topic>-dlq`). The payload shape is `{ originalPayload | originalMessage, error, flow, timestamp }`.
+When a delegate throws or a write fails after all retries, the failed event is routed to the dead-letter Kafka topic (`ETL_MK_DLQ_TOPIC` / `ETL_KM_DLQ_TOPIC`, default `<topic>-dlq`). The payload shape is `{ originalPayload | originalMessage, error, flow, timestamp }`.
 
-For Kafka→MongoDB failures, the pipeline retries up to `ETL_RETRY_ATTEMPTS` times with exponential backoff (`retryDelayMs × attempt`). The Kafka offset is committed only after a successful write or DLQ routing, ensuring at-least-once delivery.
+For Kafka→MongoDB failures, the pipeline retries up to `ETL_KM_RETRY_ATTEMPTS` times with exponential backoff (`retryDelayMs × attempt`). The Kafka offset is committed only after a successful write or DLQ routing, ensuring at-least-once delivery.
 
 The `flow` field in every dead-letter record matches the corresponding log entries for end-to-end traceability.
 
@@ -167,13 +178,18 @@ module.exports = {
     script: 'node_modules/@kozen/engine/dist/bin/kozen.js',
     args: '--moduleLoad=@kozen/etl-mk --action=etl:start',
     env: {
-      ETL_MONGO_URI:                process.env.MONGO_URI,
-      ETL_MONGO_DATABASE:           'production',
-      ETL_MONGO_COLLECTION:         'orders',
-      ETL_KAFKA_BROKERS:            process.env.KAFKA_BROKERS,
-      ETL_KAFKA_TOPIC:              'orders.events',
-      ETL_SOURCE_DELEGATE_FILE:     '/opt/app/delegates/orders.mjs',
-      ETL_DESTINATION_DELEGATE_FILE:'/opt/app/delegates/archive.mjs',
+      ETL_MK_SOURCE_URI:            process.env.MONGO_URI,
+      ETL_MK_SOURCE_DATABASE:       'production',
+      ETL_MK_SOURCE_COLLECTION:     'orders',
+      ETL_MK_DESTINATION_BROKERS:   process.env.KAFKA_BROKERS,
+      ETL_MK_DESTINATION_TOPIC:     'orders.events',
+      ETL_MK_DELEGATE_FILE:         '/opt/app/delegates/orders.mjs',
+      ETL_KM_SOURCE_BROKERS:        process.env.KAFKA_BROKERS,
+      ETL_KM_SOURCE_TOPIC:          'orders.events',
+      ETL_KM_DESTINATION_URI:       process.env.MONGO_URI,
+      ETL_KM_DESTINATION_DATABASE:  'production',
+      ETL_KM_DESTINATION_COLLECTION:'orders_archive',
+      ETL_KM_DELEGATE_FILE:         '/opt/app/delegates/archive.mjs',
       KOZEN_LOG_LEVEL:              'INFO'
     },
     restart_delay: 5000,
@@ -195,12 +211,12 @@ CMD ["npx", "kozen", "--moduleLoad=@kozen/etl-mk", "--action=etl:start"]
 
 ```bash
 docker run -d \
-  -e ETL_MONGO_URI="mongodb+srv://..." \
-  -e ETL_MONGO_DATABASE=production \
-  -e ETL_MONGO_COLLECTION=orders \
-  -e ETL_KAFKA_BROKERS="broker1:9092" \
-  -e ETL_KAFKA_TOPIC=orders.events \
-  -e ETL_SOURCE_DELEGATE_FILE=/app/delegates/orders.mjs \
+  -e ETL_MK_SOURCE_URI="mongodb+srv://..." \
+  -e ETL_MK_SOURCE_DATABASE=production \
+  -e ETL_MK_SOURCE_COLLECTION=orders \
+  -e ETL_MK_DESTINATION_BROKERS="broker1:9092" \
+  -e ETL_MK_DESTINATION_TOPIC=orders.events \
+  -e ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs \
   -v /host/delegates:/app/delegates \
   my-etl-mk-image
 ```

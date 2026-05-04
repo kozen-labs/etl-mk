@@ -34,14 +34,14 @@ export class EtlModule extends KzModule {
 
 export default EtlModule;
 
-export type { IEtlOptions, IMongoConfig, IKafkaConfig } from './models/IEtlOptions';
-export type { IEtlMongoToKafkaTools }                   from './models/IEtlTools';
-export type { IKafkaDelegate }                          from './models/IEtlDelegate';
-export { DelegateLoaderService }  from './services/DelegateLoaderService';
-export { KafkaProducerService }   from './services/KafkaProducerService';
-export { KafkaConsumerService }   from './services/KafkaConsumerService';
-export { MongoWriterService }     from './services/MongoWriterService';
-export { MongoToKafkaService }    from './services/MongoToKafkaService';
-export { KafkaToMongoService }    from './services/KafkaToMongoService';
-export { EtlPipelineService }     from './services/EtlPipelineService';
-export { EtlCLIController }       from './controllers/EtlCLIController';
+export type { IEtlOptions, IMongoConfig, IKafkaConfig, IMongoToKafkaConfig, IKafkaToMongoConfig } from './models/IEtlOptions';
+export type { IEtlMongoToKafkaTools } from './models/IEtlTools';
+export type { IKafkaDelegate }        from './models/IEtlDelegate';
+export { DelegateLoaderService } from './services/DelegateLoaderService';
+export { KafkaProducerService }  from './services/KafkaProducerService';
+export { KafkaConsumerService }  from './services/KafkaConsumerService';
+export { MongoWriterService }    from './services/MongoWriterService';
+export { MongoToKafkaService }   from './services/MongoToKafkaService';
+export { KafkaToMongoService }   from './services/KafkaToMongoService';
+export { EtlPipelineService }    from './services/EtlPipelineService';
+export { EtlCLIController }      from './controllers/EtlCLIController';

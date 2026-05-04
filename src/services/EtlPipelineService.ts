@@ -14,21 +14,21 @@ export class EtlPipelineService extends BaseService {
   }
 
   async start(options: IEtlOptions): Promise<{ await: boolean }> {
-    const hasSource = !!options.sourceDelegate;
-    const hasDest   = !!options.destinationDelegate;
+    const hasMk = !!options.mk?.delegate;
+    const hasKm = !!options.km?.delegate;
 
-    if (!hasSource && !hasDest) {
+    if (!hasMk && !hasKm) {
       this.logger?.warn({
         flow: options.flow,
         src: 'EtlMk:Pipeline:start',
-        message: 'No delegates defined. Set ETL_SOURCE_DELEGATE_FILE and/or ETL_DESTINATION_DELEGATE_FILE.'
+        message: 'No delegates defined. Set ETL_MK_DELEGATE_FILE and/or ETL_KM_DELEGATE_FILE.'
       });
       return { await: false };
     }
 
     await Promise.all([
-      hasSource ? this.srvMongoToKafka?.start(options) : Promise.resolve(),
-      hasDest   ? this.srvKafkaToMongo?.start(options) : Promise.resolve()
+      hasMk ? this.srvMongoToKafka?.start(options) : Promise.resolve(),
+      hasKm ? this.srvKafkaToMongo?.start(options) : Promise.resolve()
     ]);
 
     return { await: true };

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { CLIController, FileService, IArgs, IIoC, ILogger, IModule } from '@kozen/engine';
 import type { EtlPipelineService } from '../services/EtlPipelineService';
-import type { IEtlOptions, IMongoConfig, IKafkaConfig } from '../models/IEtlOptions';
+import type { IEtlOptions, IMongoToKafkaConfig, IKafkaToMongoConfig } from '../models/IEtlOptions';
 
 export class EtlCLIController extends CLIController {
   private srvPipeline?: EtlPipelineService;
@@ -24,53 +24,58 @@ export class EtlCLIController extends CLIController {
   }
 
   async fill(args: string[] | IArgs): Promise<IArgs> {
-    const parsed = this.extract(args) as IArgs & Record<string, unknown>;
+    const parsed     = this.extract(args) as IArgs & Record<string, unknown>;
+    const moduleType = parsed['delegateType'] as string | undefined ?? process.env['ETL_DELEGATE_TYPE'];
 
-    // MongoDB connection
-    parsed['mongo'] = parsed['mongo'] ?? {};
-    const mongo = parsed['mongo'] as Record<string, unknown>;
-    mongo['uri']        = mongo['uri']        ?? parsed['mongo.uri']        ?? process.env['ETL_MONGO_URI'];
-    mongo['database']   = mongo['database']   ?? parsed['mongo.database']   ?? process.env['ETL_MONGO_DATABASE'];
-    mongo['collection'] = mongo['collection'] ?? parsed['mongo.collection'] ?? process.env['ETL_MONGO_COLLECTION'];
+    // ── MK pipeline: MongoDB → Kafka ─────────────────────────────────────────
+    parsed['mk'] = parsed['mk'] ?? {};
+    const mk    = parsed['mk'] as Record<string, unknown>;
 
-    // Kafka connection
-    parsed['kafka'] = parsed['kafka'] ?? {};
-    const kafka = parsed['kafka'] as Record<string, unknown>;
-    kafka['brokers']  = kafka['brokers']  ?? (process.env['ETL_KAFKA_BROKERS']?.split(','));
-    kafka['topic']    = kafka['topic']    ?? parsed['kafka.topic']    ?? process.env['ETL_KAFKA_TOPIC'];
-    kafka['groupId']  = kafka['groupId']  ?? parsed['kafka.groupId']  ?? process.env['ETL_KAFKA_GROUP_ID']  ?? 'etl-mk-group';
-    kafka['clientId'] = kafka['clientId'] ?? parsed['kafka.clientId'] ?? process.env['ETL_KAFKA_CLIENT_ID'] ?? 'etl-mk';
-    kafka['ssl']      = kafka['ssl']      ?? (process.env['ETL_KAFKA_SSL'] === 'true');
+    mk['source'] = mk['source'] ?? {};
+    const mkSrc  = mk['source'] as Record<string, unknown>;
+    mkSrc['uri']        = mkSrc['uri']        ?? parsed['mk.source.uri']        ?? process.env['ETL_MK_SOURCE_URI'];
+    mkSrc['database']   = mkSrc['database']   ?? parsed['mk.source.database']   ?? process.env['ETL_MK_SOURCE_DATABASE'];
+    mkSrc['collection'] = mkSrc['collection'] ?? parsed['mk.source.collection'] ?? process.env['ETL_MK_SOURCE_COLLECTION'];
 
-    // Delegate type shared between source and destination
-    const moduleType = parsed['delegateType'] as string | undefined
-      ?? process.env['ETL_DELEGATE_TYPE'];
+    mk['destination'] = mk['destination'] ?? {};
+    const mkDst       = mk['destination'] as Record<string, unknown>;
+    mkDst['brokers']  = mkDst['brokers']  ?? (process.env['ETL_MK_DESTINATION_BROKERS']?.split(','));
+    mkDst['topic']    = mkDst['topic']    ?? parsed['mk.destination.topic']    ?? process.env['ETL_MK_DESTINATION_TOPIC'];
+    mkDst['clientId'] = mkDst['clientId'] ?? parsed['mk.destination.clientId'] ?? process.env['ETL_MK_DESTINATION_CLIENT_ID'] ?? 'etl-mk';
+    mkDst['ssl']      = mkDst['ssl']      ?? (process.env['ETL_MK_DESTINATION_SSL'] === 'true');
 
-    // Source delegate (MongoDB → Kafka)
-    const srcFile = parsed['sourceDelegateFile'] as string | undefined
-      ?? process.env['ETL_SOURCE_DELEGATE_FILE'];
-    const srcKey  = parsed['sourceDelegateKey']  as string | undefined
-      ?? process.env['ETL_SOURCE_DELEGATE_KEY']
-      ?? 'etl-mk:delegate:source';
-    if (srcFile) {
-      parsed['sourceDelegate'] = { key: srcKey, file: srcFile, type: 'instance', moduleType };
-    }
+    const mkFile = parsed['mk.delegateFile'] as string | undefined ?? process.env['ETL_MK_DELEGATE_FILE'];
+    const mkKey  = parsed['mk.delegateKey']  as string | undefined ?? process.env['ETL_MK_DELEGATE_KEY'] ?? 'etl-mk:delegate:source';
+    if (mkFile) mk['delegate'] = { key: mkKey, file: mkFile, type: 'instance', moduleType };
 
-    // Destination delegate (Kafka → MongoDB)
-    const dstFile = parsed['destinationDelegateFile'] as string | undefined
-      ?? process.env['ETL_DESTINATION_DELEGATE_FILE'];
-    const dstKey  = parsed['destinationDelegateKey']  as string | undefined
-      ?? process.env['ETL_DESTINATION_DELEGATE_KEY']
-      ?? 'etl-mk:delegate:destination';
-    if (dstFile) {
-      parsed['destinationDelegate'] = { key: dstKey, file: dstFile, type: 'instance', moduleType };
-    }
+    mk['dlqTopic'] = mk['dlqTopic'] ?? parsed['mk.dlqTopic'] ?? process.env['ETL_MK_DLQ_TOPIC'];
 
-    // Pipeline options
-    parsed['writeMode']     = parsed['writeMode']     ?? process.env['ETL_WRITE_MODE']     ?? 'insert';
-    parsed['dlqTopic']      = parsed['dlqTopic']      ?? process.env['ETL_DLQ_TOPIC'];
-    parsed['retryAttempts'] = parsed['retryAttempts'] ?? Number(process.env['ETL_RETRY_ATTEMPTS'] ?? 3);
-    parsed['retryDelayMs']  = parsed['retryDelayMs']  ?? Number(process.env['ETL_RETRY_DELAY_MS']  ?? 1000);
+    // ── KM pipeline: Kafka → MongoDB ─────────────────────────────────────────
+    parsed['km'] = parsed['km'] ?? {};
+    const km    = parsed['km'] as Record<string, unknown>;
+
+    km['source'] = km['source'] ?? {};
+    const kmSrc  = km['source'] as Record<string, unknown>;
+    kmSrc['brokers']  = kmSrc['brokers']  ?? (process.env['ETL_KM_SOURCE_BROKERS']?.split(','));
+    kmSrc['topic']    = kmSrc['topic']    ?? parsed['km.source.topic']    ?? process.env['ETL_KM_SOURCE_TOPIC'];
+    kmSrc['groupId']  = kmSrc['groupId']  ?? parsed['km.source.groupId']  ?? process.env['ETL_KM_SOURCE_GROUP_ID']  ?? 'etl-mk-group';
+    kmSrc['clientId'] = kmSrc['clientId'] ?? parsed['km.source.clientId'] ?? process.env['ETL_KM_SOURCE_CLIENT_ID'] ?? 'etl-km';
+    kmSrc['ssl']      = kmSrc['ssl']      ?? (process.env['ETL_KM_SOURCE_SSL'] === 'true');
+
+    km['destination'] = km['destination'] ?? {};
+    const kmDst       = km['destination'] as Record<string, unknown>;
+    kmDst['uri']        = kmDst['uri']        ?? parsed['km.destination.uri']        ?? process.env['ETL_KM_DESTINATION_URI'];
+    kmDst['database']   = kmDst['database']   ?? parsed['km.destination.database']   ?? process.env['ETL_KM_DESTINATION_DATABASE'];
+    kmDst['collection'] = kmDst['collection'] ?? parsed['km.destination.collection'] ?? process.env['ETL_KM_DESTINATION_COLLECTION'];
+
+    const kmFile = parsed['km.delegateFile'] as string | undefined ?? process.env['ETL_KM_DELEGATE_FILE'];
+    const kmKey  = parsed['km.delegateKey']  as string | undefined ?? process.env['ETL_KM_DELEGATE_KEY'] ?? 'etl-mk:delegate:destination';
+    if (kmFile) km['delegate'] = { key: kmKey, file: kmFile, type: 'instance', moduleType };
+
+    km['writeMode']     = km['writeMode']     ?? parsed['km.writeMode']     ?? process.env['ETL_KM_DESTINATION_WRITE_MODE'] ?? 'insert';
+    km['dlqTopic']      = km['dlqTopic']      ?? parsed['km.dlqTopic']      ?? process.env['ETL_KM_DLQ_TOPIC'];
+    km['retryAttempts'] = km['retryAttempts'] ?? Number(process.env['ETL_KM_RETRY_ATTEMPTS'] ?? 3);
+    km['retryDelayMs']  = km['retryDelayMs']  ?? Number(process.env['ETL_KM_RETRY_DELAY_MS']  ?? 1000);
 
     return parsed;
   }
@@ -84,10 +89,7 @@ export class EtlCLIController extends CLIController {
         flow,
         src: 'EtlMk:CLI:start',
         message: 'Starting ETL pipeline',
-        data: {
-          sourceDelegate:      !!options.sourceDelegate,
-          destinationDelegate: !!options.destinationDelegate
-        }
+        data: { mk: !!options.mk?.delegate, km: !!options.km?.delegate }
       });
       return await this.srvPipeline?.start(options) ?? { await: false };
     } catch (error: unknown) {
@@ -105,19 +107,31 @@ export class EtlCLIController extends CLIController {
     const filled = await this.fill((args ?? []) as IArgs);
     const missing: string[] = [];
 
-    const mongo = filled['mongo'] as Record<string, unknown>;
-    const kafka  = filled['kafka'] as Record<string, unknown>;
+    const mk    = filled['mk'] as Record<string, unknown> | undefined;
+    const mkSrc = mk?.['source'] as Record<string, unknown> | undefined;
+    const mkDst = mk?.['destination'] as Record<string, unknown> | undefined;
+    const km    = filled['km'] as Record<string, unknown> | undefined;
+    const kmSrc = km?.['source'] as Record<string, unknown> | undefined;
+    const kmDst = km?.['destination'] as Record<string, unknown> | undefined;
 
-    if (!mongo?.['uri'])        missing.push('ETL_MONGO_URI');
-    if (!mongo?.['database'])   missing.push('ETL_MONGO_DATABASE');
-    if (!mongo?.['collection']) missing.push('ETL_MONGO_COLLECTION');
-    if (!kafka?.['brokers'])    missing.push('ETL_KAFKA_BROKERS');
-    if (!kafka?.['topic'])      missing.push('ETL_KAFKA_TOPIC');
+    if (!mk?.['delegate'] && !km?.['delegate']) {
+      missing.push('ETL_MK_DELEGATE_FILE or ETL_KM_DELEGATE_FILE');
+    }
 
-    const hasSource = !!(filled['sourceDelegate'] ?? process.env['ETL_SOURCE_DELEGATE_FILE']);
-    const hasDest   = !!(filled['destinationDelegate'] ?? process.env['ETL_DESTINATION_DELEGATE_FILE']);
-    if (!hasSource && !hasDest) {
-      missing.push('ETL_SOURCE_DELEGATE_FILE or ETL_DESTINATION_DELEGATE_FILE');
+    if (mk?.['delegate']) {
+      if (!mkSrc?.['uri'])        missing.push('ETL_MK_SOURCE_URI');
+      if (!mkSrc?.['database'])   missing.push('ETL_MK_SOURCE_DATABASE');
+      if (!mkSrc?.['collection']) missing.push('ETL_MK_SOURCE_COLLECTION');
+      if (!mkDst?.['brokers'])    missing.push('ETL_MK_DESTINATION_BROKERS');
+      if (!mkDst?.['topic'])      missing.push('ETL_MK_DESTINATION_TOPIC');
+    }
+
+    if (km?.['delegate']) {
+      if (!kmSrc?.['brokers'])    missing.push('ETL_KM_SOURCE_BROKERS');
+      if (!kmSrc?.['topic'])      missing.push('ETL_KM_SOURCE_TOPIC');
+      if (!kmDst?.['uri'])        missing.push('ETL_KM_DESTINATION_URI');
+      if (!kmDst?.['database'])   missing.push('ETL_KM_DESTINATION_DATABASE');
+      if (!kmDst?.['collection']) missing.push('ETL_KM_DESTINATION_COLLECTION');
     }
 
     if (missing.length > 0) {
@@ -125,19 +139,17 @@ export class EtlCLIController extends CLIController {
       throw new Error(`Missing required configuration: ${missing.join(', ')}`);
     }
 
-    this.logger?.info({ flow, src: 'EtlMk:CLI:validate', message: 'Configuration valid' });
+    this.logger?.info({ flow, src: 'EtlMk:CLI:validate', message: 'Configuration valid',
+      data: { mk: !!mk?.['delegate'], km: !!km?.['delegate'] } });
   }
 
   private buildOptions(filled: Record<string, unknown>): IEtlOptions {
+    const mk = filled['mk'] as Record<string, unknown>;
+    const km = filled['km'] as Record<string, unknown>;
+
     return {
-      mongo:               filled['mongo']               as IMongoConfig,
-      kafka:               filled['kafka']               as IKafkaConfig,
-      sourceDelegate:      filled['sourceDelegate']      as IEtlOptions['sourceDelegate'],
-      destinationDelegate: filled['destinationDelegate'] as IEtlOptions['destinationDelegate'],
-      writeMode:           filled['writeMode']           as IEtlOptions['writeMode'],
-      dlqTopic:            filled['dlqTopic']            as string | undefined,
-      retryAttempts:       filled['retryAttempts']       as number | undefined,
-      retryDelayMs:        filled['retryDelayMs']        as number | undefined
+      mk: mk?.['delegate'] ? mk as unknown as IMongoToKafkaConfig : undefined,
+      km: km?.['delegate'] ? km as unknown as IKafkaToMongoConfig : undefined
     };
   }
 }

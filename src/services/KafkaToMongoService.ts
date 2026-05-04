@@ -6,7 +6,7 @@ import type { KafkaConsumerService } from './KafkaConsumerService';
 import type { KafkaProducerService } from './KafkaProducerService';
 import type { MongoWriterService } from './MongoWriterService';
 import type { IKafkaDelegate } from '../models/IEtlDelegate';
-import type { IEtlOptions } from '../models/IEtlOptions';
+import type { IEtlOptions, IKafkaToMongoConfig } from '../models/IEtlOptions';
 
 export class KafkaToMongoService extends BaseService {
   private srvKafkaConsumer?: KafkaConsumerService;
@@ -21,57 +21,56 @@ export class KafkaToMongoService extends BaseService {
   }
 
   async start(options: IEtlOptions): Promise<void> {
-    if (!options.destinationDelegate) {
+    const km = options.km;
+    if (!km?.delegate) {
       this.logger?.info({
         flow: options.flow,
         src: 'EtlMk:KafkaToMongo:start',
-        message: 'No destination delegate defined. Kafka→MongoDB pipeline will not start.'
+        message: 'No KM delegate defined. Kafka→MongoDB pipeline will not start.'
       });
       return;
     }
 
-    const delegate = await this.assistant?.get<IKafkaDelegate>(options.destinationDelegate);
+    const delegate = await this.assistant?.get<IKafkaDelegate>(km.delegate);
     if (!delegate) {
       this.logger?.warn({
         flow: options.flow,
         src: 'EtlMk:KafkaToMongo:start',
-        message: 'Destination delegate could not be resolved. Kafka→MongoDB pipeline will not start.'
+        message: 'KM delegate could not be resolved. Kafka→MongoDB pipeline will not start.'
       });
       return;
     }
 
-    const { kafka, mongo } = options;
-
     await this.srvKafkaConsumer?.connect(
-      kafka.brokers,
-      kafka.groupId  ?? 'etl-mk-group',
-      kafka.clientId ?? 'etl-mk',
-      kafka.ssl
+      km.source.brokers,
+      km.source.groupId  ?? 'etl-mk-group',
+      km.source.clientId ?? 'etl-km',
+      km.source.ssl
     );
-    await this.srvMongoWriter?.connect(mongo.uri);
-    await this.srvKafkaConsumer?.subscribe(kafka.topic);
+    await this.srvMongoWriter?.connect(km.destination.uri);
+    await this.srvKafkaConsumer?.subscribe(km.source.topic);
 
-    const db         = this.srvMongoWriter!.getDb(mongo.database);
-    const collection = db.collection(mongo.collection);
+    const db         = this.srvMongoWriter!.getDb(km.destination.database);
+    const collection = db.collection(km.destination.collection);
 
     const tools: ITriggerTools = {
-      flow: options.flow,
+      flow:           options.flow,
       db,
       collection,
-      dbName: mongo.database,
-      collectionName: mongo.collection,
-      assistant: this.assistant ?? undefined
+      dbName:         km.destination.database,
+      collectionName: km.destination.collection,
+      assistant:      this.assistant ?? undefined
     };
 
     this.logger?.info({
       flow: options.flow,
       src: 'EtlMk:KafkaToMongo:start',
       message: 'Pipeline started',
-      data: { topic: kafka.topic, database: mongo.database, collection: mongo.collection }
+      data: { topic: km.source.topic, database: km.destination.database, collection: km.destination.collection }
     });
 
     await this.srvKafkaConsumer?.run(
-      (payload) => this.onMessage(payload, delegate, tools, options)
+      (payload) => this.onMessage(payload, delegate, tools, km)
     );
   }
 
@@ -79,13 +78,13 @@ export class KafkaToMongoService extends BaseService {
     payload: EachMessagePayload,
     delegate: IKafkaDelegate,
     tools: ITriggerTools,
-    options: IEtlOptions
+    km: IKafkaToMongoConfig
   ): Promise<void> {
     const eventFlow    = randomUUID();
-    const { mongo, kafka } = options;
-    const dlqTopic     = options.dlqTopic ?? `${kafka.topic}-dlq`;
-    const maxAttempts  = options.retryAttempts ?? 3;
-    const retryDelayMs = options.retryDelayMs  ?? 1000;
+    const dlqTopic     = km.dlqTopic      ?? `${km.source.topic}-dlq`;
+    const maxAttempts  = km.retryAttempts ?? 3;
+    const retryDelayMs = km.retryDelayMs  ?? 1000;
+    const nextOffset   = (BigInt(payload.message.offset) + 1n).toString();
 
     let rawPayload: unknown;
     try {
@@ -95,13 +94,12 @@ export class KafkaToMongoService extends BaseService {
     }
 
     const handler = delegate.message ?? delegate.on ?? delegate.default;
-    const nextOffset = (BigInt(payload.message.offset) + 1n).toString();
 
     if (typeof handler !== 'function') {
       this.logger?.warn({
         flow: eventFlow,
         src: 'EtlMk:KafkaToMongo:onMessage',
-        message: 'No handler defined in destination delegate'
+        message: 'No handler defined in KM delegate'
       });
       await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
       return;
@@ -118,16 +116,16 @@ export class KafkaToMongoService extends BaseService {
 
         if (document !== null && document !== undefined) {
           await this.srvMongoWriter?.write(
-            mongo.database,
-            mongo.collection,
+            km.destination.database,
+            km.destination.collection,
             document as Record<string, unknown>,
-            options.writeMode ?? 'insert'
+            km.writeMode ?? 'insert'
           );
           this.logger?.info({
             flow: eventFlow,
             src: 'EtlMk:KafkaToMongo:onMessage',
             message: 'Message written',
-            data: { collection: mongo.collection }
+            data: { collection: km.destination.collection }
           });
         }
 

@@ -3,12 +3,12 @@ import { randomUUID } from 'crypto';
 import { ChangeStreamService } from '@kozen/trigger';
 import type { ITriggerDelegate, ITriggerTools } from '@kozen/trigger';
 import type { KafkaProducerService } from './KafkaProducerService';
-import type { IEtlOptions } from '../models/IEtlOptions';
+import type { IEtlOptions, IMongoToKafkaConfig } from '../models/IEtlOptions';
 import type { IEtlMongoToKafkaTools } from '../models/IEtlTools';
 
 export class MongoToKafkaService extends ChangeStreamService {
   private srvKafkaProducer?: KafkaProducerService;
-  private etlOptions?: IEtlOptions;
+  private mk?: IMongoToKafkaConfig;
 
   constructor(dependency?: Record<string, unknown>) {
     super(dependency as never);
@@ -16,31 +16,32 @@ export class MongoToKafkaService extends ChangeStreamService {
   }
 
   async start(options: IEtlOptions): Promise<void> {
-    if (!options.sourceDelegate) {
+    const mk = options.mk;
+    if (!mk?.delegate) {
       this.logger?.info({
         flow: options.flow,
         src: 'EtlMk:MongoToKafka:start',
-        message: 'No source delegate defined. MongoDB→Kafka pipeline will not start.'
+        message: 'No MK delegate defined. MongoDB→Kafka pipeline will not start.'
       });
       return;
     }
 
-    this.etlOptions = options;
+    this.mk = mk;
 
     await this.srvKafkaProducer?.connect(
-      options.kafka.brokers,
-      options.kafka.clientId ?? 'etl-mk',
-      options.kafka.ssl
+      mk.destination.brokers,
+      mk.destination.clientId ?? 'etl-mk',
+      mk.destination.ssl
     );
 
     await super.start({
       flow: options.flow ?? randomUUID(),
       mdb: {
-        uri: options.mongo.uri,
-        database: options.mongo.database,
-        collection: options.mongo.collection
+        uri:        mk.source.uri,
+        database:   mk.source.database,
+        collection: mk.source.collection
       },
-      opt: options.sourceDelegate
+      opt: mk.delegate
     });
   }
 
@@ -49,15 +50,15 @@ export class MongoToKafkaService extends ChangeStreamService {
     delegate?: ITriggerDelegate,
     tools?: ITriggerTools
   ): Promise<void> {
-    if (!this.etlOptions || !delegate) return;
+    const mk = this.mk;
+    if (!mk || !delegate) return;
 
-    const { kafka, dlqTopic } = this.etlOptions;
-    const deadLetterTopic = dlqTopic ?? `${kafka.topic}-dlq`;
+    const deadLetterTopic = mk.dlqTopic ?? `${mk.destination.topic}-dlq`;
 
     const docKey = (change as unknown as Record<string, unknown>)['documentKey'] as
       | Record<string, unknown>
       | undefined;
-    let messageKey = docKey ? String(docKey['_id'] ?? randomUUID()) : randomUUID();
+    let messageKey     = docKey ? String(docKey['_id'] ?? randomUUID()) : randomUUID();
     let messageHeaders: Record<string, string> = {};
 
     const etlTools: IEtlMongoToKafkaTools = {
@@ -68,7 +69,7 @@ export class MongoToKafkaService extends ChangeStreamService {
 
     const specificHandler = delegate[change.operationType as keyof ITriggerDelegate];
     const fallback = delegate.on ?? delegate.default;
-    const handler = typeof specificHandler === 'function' ? specificHandler : fallback;
+    const handler  = typeof specificHandler === 'function' ? specificHandler : fallback;
 
     if (typeof handler !== 'function') {
       this.logger?.warn({
@@ -82,19 +83,19 @@ export class MongoToKafkaService extends ChangeStreamService {
     const t0 = Date.now();
 
     try {
-      // ITriggerDelegate types handlers as returning void, but ETL handlers return the Kafka payload.
+      // ITriggerDelegate types handlers as void, but ETL handlers return the Kafka payload.
       const payload = await (handler as unknown as (
         c: typeof change,
         t: IEtlMongoToKafkaTools
       ) => Promise<unknown>).call(this, change, etlTools);
 
       if (payload !== null && payload !== undefined) {
-        await this.srvKafkaProducer?.publish(kafka.topic, messageKey, payload, messageHeaders);
+        await this.srvKafkaProducer?.publish(mk.destination.topic, messageKey, payload, messageHeaders);
         this.logger?.info({
           flow: tools?.flow,
           src: 'EtlMk:MongoToKafka:onChange',
           message: 'Event published',
-          data: { operationType: change.operationType, topic: kafka.topic, durationMs: Date.now() - t0 }
+          data: { operationType: change.operationType, topic: mk.destination.topic, durationMs: Date.now() - t0 }
         });
       }
     } catch (error: unknown) {

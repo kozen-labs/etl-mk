@@ -14,16 +14,31 @@ export interface IKafkaConfig {
   ssl?: boolean;
 }
 
+/** Configuration for the MongoDB → Kafka pipeline. */
+export interface IMongoToKafkaConfig {
+  source:      IMongoConfig;
+  destination: IKafkaConfig;
+  /** Presence of this field enables the pipeline. Absence disables it. */
+  delegate?:   IDependency;
+  dlqTopic?:   string;
+}
+
+/** Configuration for the Kafka → MongoDB pipeline. */
+export interface IKafkaToMongoConfig {
+  source:        IKafkaConfig;
+  destination:   IMongoConfig;
+  /** Presence of this field enables the pipeline. Absence disables it. */
+  delegate?:     IDependency;
+  writeMode?:    'insert' | 'upsert';
+  dlqTopic?:     string;
+  retryAttempts?: number;
+  retryDelayMs?:  number;
+}
+
 export interface IEtlOptions {
   flow?: string;
-  mongo: IMongoConfig;
-  kafka: IKafkaConfig;
-  /** If set, starts the MongoDB → Kafka pipeline using this delegate. */
-  sourceDelegate?: IDependency;
-  /** If set, starts the Kafka → MongoDB pipeline using this delegate. */
-  destinationDelegate?: IDependency;
-  writeMode?: 'insert' | 'upsert';
-  dlqTopic?: string;
-  retryAttempts?: number;
-  retryDelayMs?: number;
+  /** MongoDB → Kafka pipeline. Omit to disable this direction. */
+  mk?: IMongoToKafkaConfig;
+  /** Kafka → MongoDB pipeline. Omit to disable this direction. */
+  km?: IKafkaToMongoConfig;
 }
