@@ -16,12 +16,21 @@ export class KafkaProducerService extends BaseService {
     });
   }
 
-  async publish(topic: string, key: string, value: unknown): Promise<void> {
+  async publish(
+    topic: string,
+    key: string,
+    value: unknown,
+    headers?: Record<string, string>
+  ): Promise<void> {
     if (!this.producer) throw new Error('KafkaProducerService: not connected');
+
+    const kafkaHeaders = headers
+      ? Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, Buffer.from(v)]))
+      : undefined;
 
     await this.producer.send({
       topic,
-      messages: [{ key, value: JSON.stringify(value) }]
+      messages: [{ key, value: JSON.stringify(value), headers: kafkaHeaders }]
     });
   }
 

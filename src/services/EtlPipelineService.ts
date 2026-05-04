@@ -8,25 +8,29 @@ export class EtlPipelineService extends BaseService {
   private srvKafkaToMongo?: KafkaToMongoService;
 
   constructor(dependency?: Record<string, unknown>) {
-    super(dependency as { assistant: never; logger: never });
+    super(dependency as never);
     this.srvMongoToKafka = dependency?.['srvMongoToKafka'] as MongoToKafkaService;
     this.srvKafkaToMongo = dependency?.['srvKafkaToMongo'] as KafkaToMongoService;
   }
 
   async start(options: IEtlOptions): Promise<{ await: boolean }> {
-    switch (options.mode) {
-      case 'mongo-to-kafka':
-        await this.srvMongoToKafka?.start(options);
-        return { await: true };
+    const hasSource = !!options.sourceDelegate;
+    const hasDest   = !!options.destinationDelegate;
 
-      case 'kafka-to-mongo':
-        await this.srvKafkaToMongo?.start(options);
-        return { await: true };
-
-      default:
-        throw new Error(
-          `Unknown ETL mode: '${options.mode}'. Use 'mongo-to-kafka' or 'kafka-to-mongo'.`
-        );
+    if (!hasSource && !hasDest) {
+      this.logger?.warn({
+        flow: options.flow,
+        src: 'EtlMk:Pipeline:start',
+        message: 'No delegates defined. Set ETL_SOURCE_DELEGATE_FILE and/or ETL_DESTINATION_DELEGATE_FILE.'
+      });
+      return { await: false };
     }
+
+    await Promise.all([
+      hasSource ? this.srvMongoToKafka?.start(options) : Promise.resolve(),
+      hasDest   ? this.srvKafkaToMongo?.start(options) : Promise.resolve()
+    ]);
+
+    return { await: true };
   }
 }

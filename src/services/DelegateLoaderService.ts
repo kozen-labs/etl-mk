@@ -4,31 +4,33 @@ import path from 'path';
 
 type AnyDelegate = Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined>;
 
+/**
+ * Utility for loading delegate modules from the filesystem.
+ * Use this when you need to load a delegate outside of the Kozen IoC container.
+ * For pipeline services, prefer IoC-based resolution via options.sourceDelegate / options.destinationDelegate.
+ */
 export class DelegateLoaderService extends BaseService {
-  private delegate: AnyDelegate | null = null;
 
-  async load(filePath?: string, delegateType?: string): Promise<void> {
-    if (!filePath) {
-      this.delegate = null;
-      return;
-    }
-
+  async loadFromFile(filePath: string, delegateType?: string): Promise<AnyDelegate> {
     const resolved = path.resolve(filePath);
     const type = delegateType ?? this.detectType(resolved);
 
     try {
+      let mod: AnyDelegate;
       if (type === 'esm') {
-        const mod = await import(pathToFileURL(resolved).href);
-        this.delegate = (mod.default ?? mod) as AnyDelegate;
+        const imported = await import(pathToFileURL(resolved).href);
+        mod = (imported.default ?? imported) as AnyDelegate;
       } else {
-        this.delegate = require(resolved) as AnyDelegate;
+        mod = require(resolved) as AnyDelegate;
       }
 
       this.logger?.info({
-        src: 'EtlMk:DelegateLoader:load',
-        message: `Delegate loaded`,
+        src: 'EtlMk:DelegateLoader:loadFromFile',
+        message: 'Delegate loaded',
         data: { file: resolved, type }
       });
+
+      return mod;
     } catch (error: unknown) {
       throw new Error(
         `Failed to load delegate from '${resolved}': ${(error as Error).message}`
@@ -36,37 +38,16 @@ export class DelegateLoaderService extends BaseService {
     }
   }
 
-  async dispatch(event: unknown, tools: unknown, operationType?: string): Promise<unknown> {
-    if (!this.delegate) {
-      return this.passthrough(event, !!operationType);
-    }
+  async dispatch(delegate: AnyDelegate, event: unknown, tools: unknown, operationType?: string): Promise<unknown> {
+    const specific = operationType ? delegate[operationType] : undefined;
+    const fallback = delegate['message'] ?? delegate['on'] ?? delegate['default'];
+    const handler  = specific ?? fallback;
 
-    const specific = operationType ? this.delegate[operationType] : undefined;
-    const fallback =
-      this.delegate.message ??
-      this.delegate.on ??
-      this.delegate.default;
-
-    const handler = specific ?? fallback;
-
-    if (typeof handler !== 'function') {
-      return this.passthrough(event, !!operationType);
-    }
-
+    if (typeof handler !== 'function') return event;
     return handler(event, tools);
   }
 
-  private passthrough(event: unknown, isMongo: boolean): unknown {
-    if (isMongo) {
-      const e = event as Record<string, unknown>;
-      return e['fullDocument'] ?? e;
-    }
-    return event;
-  }
-
   private detectType(filePath: string): 'esm' | 'cjs' {
-    const ext = path.extname(filePath);
-    if (ext === '.mjs') return 'esm';
-    return 'cjs';
+    return path.extname(filePath) === '.mjs' ? 'esm' : 'cjs';
   }
 }

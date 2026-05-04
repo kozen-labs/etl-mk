@@ -1,0 +1,10 @@
+{
+  "modules": {
+    "load": [
+      {
+        "name": "etl-mk",
+        "target": "C:\\data\\dev\\check\\ketl"
+      }
+    ]
+  }
+}

@@ -1,109 +1,173 @@
 import { BaseService } from '@kozen/engine';
 import { randomUUID } from 'crypto';
-import type { DelegateLoaderService } from './DelegateLoaderService';
+import type { EachMessagePayload } from 'kafkajs';
+import type { ITriggerTools } from '@kozen/trigger';
 import type { KafkaConsumerService } from './KafkaConsumerService';
+import type { KafkaProducerService } from './KafkaProducerService';
 import type { MongoWriterService } from './MongoWriterService';
-import type { IEtlOptions, IEtlSourceKafka, IEtlDestinationMongo } from '../models/IEtlOptions';
-import type { IEtlKafkaToMongoTools } from '../models/IEtlTools';
+import type { IKafkaDelegate } from '../models/IEtlDelegate';
+import type { IEtlOptions } from '../models/IEtlOptions';
 
 export class KafkaToMongoService extends BaseService {
-  private srvDelegateLoader?: DelegateLoaderService;
   private srvKafkaConsumer?: KafkaConsumerService;
+  private srvKafkaProducer?: KafkaProducerService;
   private srvMongoWriter?: MongoWriterService;
 
   constructor(dependency?: Record<string, unknown>) {
-    super(dependency as { assistant: never; logger: never });
-    this.srvDelegateLoader = dependency?.['srvDelegateLoader'] as DelegateLoaderService;
-    this.srvKafkaConsumer  = dependency?.['srvKafkaConsumer']  as KafkaConsumerService;
-    this.srvMongoWriter    = dependency?.['srvMongoWriter']    as MongoWriterService;
+    super(dependency as never);
+    this.srvKafkaConsumer = dependency?.['srvKafkaConsumer'] as KafkaConsumerService;
+    this.srvKafkaProducer = dependency?.['srvKafkaProducer'] as KafkaProducerService;
+    this.srvMongoWriter   = dependency?.['srvMongoWriter']   as MongoWriterService;
   }
 
   async start(options: IEtlOptions): Promise<void> {
-    const source = options.source as IEtlSourceKafka;
-    const dest   = options.destination as IEtlDestinationMongo;
-    const flow   = randomUUID();
-    const dlqCollection = dest.dlqCollection ?? `${dest.collection}_dlq`;
+    if (!options.destinationDelegate) {
+      this.logger?.info({
+        flow: options.flow,
+        src: 'EtlMk:KafkaToMongo:start',
+        message: 'No destination delegate defined. Kafka→MongoDB pipeline will not start.'
+      });
+      return;
+    }
 
-    await this.srvDelegateLoader?.load(options.delegateFile, options.delegateType);
+    const delegate = await this.assistant?.get<IKafkaDelegate>(options.destinationDelegate);
+    if (!delegate) {
+      this.logger?.warn({
+        flow: options.flow,
+        src: 'EtlMk:KafkaToMongo:start',
+        message: 'Destination delegate could not be resolved. Kafka→MongoDB pipeline will not start.'
+      });
+      return;
+    }
+
+    const { kafka, mongo } = options;
 
     await this.srvKafkaConsumer?.connect(
-      source.brokers,
-      source.groupId  ?? 'etl-mk-group',
-      source.clientId ?? 'etl-mk',
-      source.ssl
+      kafka.brokers,
+      kafka.groupId  ?? 'etl-mk-group',
+      kafka.clientId ?? 'etl-mk',
+      kafka.ssl
     );
+    await this.srvMongoWriter?.connect(mongo.uri);
+    await this.srvKafkaConsumer?.subscribe(kafka.topic);
 
-    await this.srvMongoWriter?.connect(dest.uri);
+    const db         = this.srvMongoWriter!.getDb(mongo.database);
+    const collection = db.collection(mongo.collection);
 
-    await this.srvKafkaConsumer?.subscribe(source.topic);
+    const tools: ITriggerTools = {
+      flow: options.flow,
+      db,
+      collection,
+      dbName: mongo.database,
+      collectionName: mongo.collection,
+      assistant: this.assistant ?? undefined
+    };
 
     this.logger?.info({
-      flow,
+      flow: options.flow,
       src: 'EtlMk:KafkaToMongo:start',
-      message: `Pipeline started`,
-      data: { topic: source.topic, database: dest.database, collection: dest.collection }
+      message: 'Pipeline started',
+      data: { topic: kafka.topic, database: mongo.database, collection: mongo.collection }
     });
 
-    await this.srvKafkaConsumer?.run(async ({ message }) => {
-      const eventFlow = randomUUID();
+    await this.srvKafkaConsumer?.run(
+      (payload) => this.onMessage(payload, delegate, tools, options)
+    );
+  }
 
-      let payload: unknown;
-      try {
-        payload = JSON.parse(message.value?.toString() ?? '{}');
-      } catch {
-        payload = message.value?.toString();
-      }
+  async onMessage(
+    payload: EachMessagePayload,
+    delegate: IKafkaDelegate,
+    tools: ITriggerTools,
+    options: IEtlOptions
+  ): Promise<void> {
+    const eventFlow    = randomUUID();
+    const { mongo, kafka } = options;
+    const dlqTopic     = options.dlqTopic ?? `${kafka.topic}-dlq`;
+    const maxAttempts  = options.retryAttempts ?? 3;
+    const retryDelayMs = options.retryDelayMs  ?? 1000;
 
-      const db         = this.srvMongoWriter!.getDb(dest.database);
-      const collection = db.collection(dest.collection);
+    let rawPayload: unknown;
+    try {
+      rawPayload = JSON.parse(payload.message.value?.toString() ?? '{}');
+    } catch {
+      rawPayload = payload.message.value?.toString();
+    }
 
-      const tools: IEtlKafkaToMongoTools = {
-        mode: 'kafka-to-mongo',
+    const handler = delegate.message ?? delegate.on ?? delegate.default;
+    const nextOffset = (BigInt(payload.message.offset) + 1n).toString();
+
+    if (typeof handler !== 'function') {
+      this.logger?.warn({
         flow: eventFlow,
-        db,
-        collection,
-        dbName: dest.database,
-        collectionName: dest.collection,
-        assistant: this.assistant ?? undefined
-      };
+        src: 'EtlMk:KafkaToMongo:onMessage',
+        message: 'No handler defined in destination delegate'
+      });
+      await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
+      return;
+    }
 
-      const t0 = Date.now();
+    let attempts = 0;
 
+    while (true) {
       try {
-        const document = await this.srvDelegateLoader?.dispatch(payload, tools);
+        const document = await (handler as (
+          msg: unknown,
+          tools: ITriggerTools
+        ) => Promise<unknown>).call(this, rawPayload, { ...tools, flow: eventFlow });
 
         if (document !== null && document !== undefined) {
           await this.srvMongoWriter?.write(
-            dest.database,
-            dest.collection,
+            mongo.database,
+            mongo.collection,
             document as Record<string, unknown>,
-            dest.writeMode ?? 'insert'
+            options.writeMode ?? 'insert'
           );
-
           this.logger?.info({
             flow: eventFlow,
-            src: 'EtlMk:KafkaToMongo:message',
-            message: `Message written`,
-            data: { collection: dest.collection, durationMs: Date.now() - t0 }
+            src: 'EtlMk:KafkaToMongo:onMessage',
+            message: 'Message written',
+            data: { collection: mongo.collection }
           });
         }
+
+        await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
+        return;
+
       } catch (error: unknown) {
+        attempts++;
         const msg = (error as Error).message;
+
+        if (attempts > maxAttempts) {
+          this.logger?.warn({
+            flow: eventFlow,
+            src: 'EtlMk:KafkaToMongo:onMessage',
+            message: `Max retries (${maxAttempts}) exceeded. Routing to DLQ.`,
+            data: { dlqTopic, error: msg }
+          });
+          await this.srvKafkaProducer?.publishDLQ(dlqTopic, {
+            originalMessage: rawPayload,
+            error: msg,
+            flow: eventFlow,
+            timestamp: new Date()
+          });
+          await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
+          return;
+        }
+
         this.logger?.warn({
           flow: eventFlow,
-          src: 'EtlMk:KafkaToMongo:message',
-          message: `Message failed, routing to DLQ`,
-          data: { dlqCollection, error: msg }
+          src: 'EtlMk:KafkaToMongo:onMessage',
+          message: `Attempt ${attempts}/${maxAttempts} failed, retrying in ${retryDelayMs * attempts}ms`,
+          data: { error: msg }
         });
-
-        await this.srvMongoWriter?.writeDLQ(dest.database, dlqCollection, {
-          originalMessage: payload,
-          error: msg,
-          flow: eventFlow,
-          timestamp: new Date()
-        });
+        await this.delay(retryDelayMs * attempts);
       }
-    });
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   async stop(): Promise<void> {

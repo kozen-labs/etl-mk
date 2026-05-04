@@ -27,20 +27,16 @@ export class EtlModule extends KzModule {
     config: IConfig | null
   ): Promise<Record<string, IDependency> | null> {
     let dep: Record<string, unknown> = { ...ioc };
-
-    if (config?.type === 'cli') {
-      dep = { ...dep, ...cli };
-    }
-
+    if (config?.type === 'cli') dep = { ...dep, ...cli };
     return Promise.resolve(this.fix(dep as IDependencyMap) as Record<string, IDependency>);
   }
 }
 
 export default EtlModule;
 
-export type { IEtlOptions, IEtlSourceMongo, IEtlSourceKafka, IEtlDestinationKafka, IEtlDestinationMongo, EtlMode } from './models/IEtlOptions';
-export type { IEtlMongoToKafkaTools, IEtlKafkaToMongoTools } from './models/IEtlTools';
-export type { IEtlMongoToKafkaDelegate, IEtlKafkaToMongoDelegate, MongoToKafkaHandler, KafkaToMongoHandler } from './models/IEtlDelegate';
+export type { IEtlOptions, IMongoConfig, IKafkaConfig } from './models/IEtlOptions';
+export type { IEtlMongoToKafkaTools }                   from './models/IEtlTools';
+export type { IKafkaDelegate }                          from './models/IEtlDelegate';
 export { DelegateLoaderService }  from './services/DelegateLoaderService';
 export { KafkaProducerService }   from './services/KafkaProducerService';
 export { KafkaConsumerService }   from './services/KafkaConsumerService';

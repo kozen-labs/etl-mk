@@ -1,12 +1,12 @@
-export type EtlMode = 'mongo-to-kafka' | 'kafka-to-mongo';
+import type { IDependency } from '@kozen/engine';
 
-export interface IEtlSourceMongo {
+export interface IMongoConfig {
   uri: string;
   database: string;
   collection: string;
 }
 
-export interface IEtlSourceKafka {
+export interface IKafkaConfig {
   brokers: string[];
   topic: string;
   groupId?: string;
@@ -14,28 +14,16 @@ export interface IEtlSourceKafka {
   ssl?: boolean;
 }
 
-export interface IEtlDestinationKafka {
-  brokers: string[];
-  topic: string;
-  clientId?: string;
-  dlqTopic?: string;
-  ssl?: boolean;
-}
-
-export interface IEtlDestinationMongo {
-  uri: string;
-  database: string;
-  collection: string;
-  writeMode?: 'insert' | 'upsert';
-  dlqCollection?: string;
-}
-
 export interface IEtlOptions {
-  mode: EtlMode;
-  delegateFile?: string;
-  delegateType?: string;
+  flow?: string;
+  mongo: IMongoConfig;
+  kafka: IKafkaConfig;
+  /** If set, starts the MongoDB → Kafka pipeline using this delegate. */
+  sourceDelegate?: IDependency;
+  /** If set, starts the Kafka → MongoDB pipeline using this delegate. */
+  destinationDelegate?: IDependency;
+  writeMode?: 'insert' | 'upsert';
+  dlqTopic?: string;
   retryAttempts?: number;
   retryDelayMs?: number;
-  source: IEtlSourceMongo | IEtlSourceKafka;
-  destination: IEtlDestinationKafka | IEtlDestinationMongo;
 }

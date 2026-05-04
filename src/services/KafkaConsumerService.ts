@@ -8,10 +8,9 @@ export class KafkaConsumerService extends BaseService {
     const kafka = new Kafka({ clientId, brokers, ssl, logLevel: logLevel.NOTHING });
     this.consumer = kafka.consumer({ groupId });
     await this.consumer.connect();
-
     this.logger?.info({
       src: 'EtlMk:KafkaConsumer:connect',
-      message: `Kafka consumer connected`,
+      message: 'Kafka consumer connected',
       data: { brokers, groupId, clientId }
     });
   }
@@ -23,7 +22,11 @@ export class KafkaConsumerService extends BaseService {
 
   async run(handler: (payload: EachMessagePayload) => Promise<void>): Promise<void> {
     if (!this.consumer) throw new Error('KafkaConsumerService: not connected');
-    await this.consumer.run({ eachMessage: handler });
+    await this.consumer.run({ autoCommit: false, eachMessage: handler });
+  }
+
+  async commit(topic: string, partition: number, offset: string): Promise<void> {
+    await this.consumer?.commitOffsets([{ topic, partition, offset }]);
   }
 
   async disconnect(): Promise<void> {
