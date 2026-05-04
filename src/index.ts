@@ -26,8 +26,11 @@ export class EtlModule extends KzModule {
   public register(
     config: IConfig | null
   ): Promise<Record<string, IDependency> | null> {
-    let dep: Record<string, unknown> = { ...ioc };
-    if (config?.type === 'cli') dep = { ...dep, ...cli };
+    let dep: Record<string, unknown>;
+    switch (config?.type) {
+      case 'cli': dep = { ...ioc, ...cli }; break;
+      default:    dep = { ...ioc };         break;
+    }
     return Promise.resolve(this.fix(dep as IDependencyMap) as Record<string, IDependency>);
   }
 }
