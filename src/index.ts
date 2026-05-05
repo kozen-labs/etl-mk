@@ -4,11 +4,15 @@ import path from 'path';
 import cli from './configs/cli.json';
 import ioc from './configs/ioc.json';
 
+/**
+ * Kozen module entry point; registers all ETL pipeline services and the CLI controller.
+ */
 export class EtlModule extends KzModule {
   constructor(dependency?: unknown) {
     super(dependency as never);
     this.metadata.alias = 'etl';
     try {
+      // sync read is acceptable here: constructor runs once at startup for a single small file
       const pkg = JSON.parse(
         fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')
       ) as Record<string, string>;

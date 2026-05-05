@@ -3,8 +3,8 @@ Description:
     the Kozen framework. Each direction is an independent process controlled by its own
     delegate file.
 
-    MK process (ETL_MK_*): MongoDB change stream → Kafka topic
-    KM process (ETL_KM_*): Kafka topic → MongoDB collection
+    MK process (KOZEN_ETL_MK_*): MongoDB change stream → Kafka topic
+    KM process (KOZEN_ETL_KM_*): Kafka topic → MongoDB collection
 
     Omit a delegate to skip that direction. Both delegates may be active simultaneously
     for a full bidirectional pipeline.
@@ -50,35 +50,35 @@ Common Options:
     --delegateType=<esm|cjs>            Module format (auto-detected from file extension)
 
 Environment Variables (MK pipeline — MongoDB → Kafka):
-    ETL_MK_SOURCE_URI                   → --mk.source.uri
-    ETL_MK_SOURCE_DATABASE              → --mk.source.database
-    ETL_MK_SOURCE_COLLECTION            → --mk.source.collection
-    ETL_MK_DESTINATION_BROKERS          → --mk.destination.brokers
-    ETL_MK_DESTINATION_TOPIC            → --mk.destination.topic
-    ETL_MK_DESTINATION_CLIENT_ID        → --mk.destination.clientId
-    ETL_MK_DESTINATION_SSL              → --mk.destination.ssl
-    ETL_MK_DELEGATE_FILE                → --mk.delegateFile
-    ETL_MK_DELEGATE_KEY                 → --mk.delegateKey
-    ETL_MK_DLQ_TOPIC                    → --mk.dlqTopic
+    KOZEN_ETL_MK_SOURCE_URI             → --mk.source.uri
+    KOZEN_ETL_MK_SOURCE_DATABASE        → --mk.source.database
+    KOZEN_ETL_MK_SOURCE_COLLECTION      → --mk.source.collection
+    KOZEN_ETL_MK_DESTINATION_BROKERS    → --mk.destination.brokers
+    KOZEN_ETL_MK_DESTINATION_TOPIC      → --mk.destination.topic
+    KOZEN_ETL_MK_DESTINATION_CLIENT_ID  → --mk.destination.clientId
+    KOZEN_ETL_MK_DESTINATION_SSL        → --mk.destination.ssl
+    KOZEN_ETL_MK_DELEGATE_FILE          → --mk.delegateFile
+    KOZEN_ETL_MK_DELEGATE_KEY           → --mk.delegateKey
+    KOZEN_ETL_MK_DLQ_TOPIC              → --mk.dlqTopic
 
 Environment Variables (KM pipeline — Kafka → MongoDB):
-    ETL_KM_SOURCE_BROKERS               → --km.source.brokers
-    ETL_KM_SOURCE_TOPIC                 → --km.source.topic
-    ETL_KM_SOURCE_GROUP_ID              → --km.source.groupId
-    ETL_KM_SOURCE_CLIENT_ID             → --km.source.clientId
-    ETL_KM_SOURCE_SSL                   → --km.source.ssl
-    ETL_KM_DESTINATION_URI              → --km.destination.uri
-    ETL_KM_DESTINATION_DATABASE         → --km.destination.database
-    ETL_KM_DESTINATION_COLLECTION       → --km.destination.collection
-    ETL_KM_DELEGATE_FILE                → --km.delegateFile
-    ETL_KM_DELEGATE_KEY                 → --km.delegateKey
-    ETL_KM_DESTINATION_WRITE_MODE       → --km.writeMode
-    ETL_KM_DLQ_TOPIC                    → --km.dlqTopic
-    ETL_KM_RETRY_ATTEMPTS               → --km.retryAttempts
-    ETL_KM_RETRY_DELAY_MS               → --km.retryDelayMs
+    KOZEN_ETL_KM_SOURCE_BROKERS         → --km.source.brokers
+    KOZEN_ETL_KM_SOURCE_TOPIC           → --km.source.topic
+    KOZEN_ETL_KM_SOURCE_GROUP_ID        → --km.source.groupId
+    KOZEN_ETL_KM_SOURCE_CLIENT_ID       → --km.source.clientId
+    KOZEN_ETL_KM_SOURCE_SSL             → --km.source.ssl
+    KOZEN_ETL_KM_DESTINATION_URI        → --km.destination.uri
+    KOZEN_ETL_KM_DESTINATION_DATABASE   → --km.destination.database
+    KOZEN_ETL_KM_DESTINATION_COLLECTION → --km.destination.collection
+    KOZEN_ETL_KM_DELEGATE_FILE          → --km.delegateFile
+    KOZEN_ETL_KM_DELEGATE_KEY           → --km.delegateKey
+    KOZEN_ETL_KM_DESTINATION_WRITE_MODE → --km.writeMode
+    KOZEN_ETL_KM_DLQ_TOPIC              → --km.dlqTopic
+    KOZEN_ETL_KM_RETRY_ATTEMPTS         → --km.retryAttempts
+    KOZEN_ETL_KM_RETRY_DELAY_MS         → --km.retryDelayMs
 
 Common Environment Variables:
-    ETL_DELEGATE_TYPE                   → --delegateType
+    KOZEN_ETL_DELEGATE_TYPE             → --delegateType
     KOZEN_LOG_LEVEL                     Log verbosity: DEBUG | INFO | WARN | ERROR (default: INFO)
     KOZEN_LOG_TYPE                      Log format: object | json (default: object)
 
@@ -114,28 +114,28 @@ KM Delegate (Kafka → MongoDB):
     }
 
 Error Handling (Kafka → MongoDB):
-    On failure, the pipeline retries up to ETL_KM_RETRY_ATTEMPTS times with exponential
-    backoff (delay × attempt). After max retries, the message is published to the
-    dead-letter Kafka topic and the offset is committed. The offset is committed only
-    after a successful write or DLQ routing, ensuring at-least-once delivery.
+    On failure, the pipeline retries up to KOZEN_ETL_KM_RETRY_ATTEMPTS times with
+    exponential backoff (delay × attempt). After max retries, the message is published
+    to the dead-letter Kafka topic and the offset is committed. The offset is committed
+    only after a successful write or DLQ routing, ensuring at-least-once delivery.
 
 Examples:
     # MK pipeline only: MongoDB → Kafka
-    ETL_MK_SOURCE_URI="mongodb+srv://user:pass@cluster/db" \
-    ETL_MK_SOURCE_DATABASE=mydb \
-    ETL_MK_SOURCE_COLLECTION=orders \
-    ETL_MK_DESTINATION_BROKERS=broker1:9092,broker2:9092 \
-    ETL_MK_DESTINATION_TOPIC=orders.events \
-    ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs \
+    KOZEN_ETL_MK_SOURCE_URI="mongodb+srv://user:pass@cluster/db" \
+    KOZEN_ETL_MK_SOURCE_DATABASE=mydb \
+    KOZEN_ETL_MK_SOURCE_COLLECTION=orders \
+    KOZEN_ETL_MK_DESTINATION_BROKERS=broker1:9092,broker2:9092 \
+    KOZEN_ETL_MK_DESTINATION_TOPIC=orders.events \
+    KOZEN_ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs \
     kozen --moduleLoad=@kozen/etl-mk --action=etl:start
 
     # KM pipeline only: Kafka → MongoDB
-    ETL_KM_SOURCE_BROKERS=broker1:9092,broker2:9092 \
-    ETL_KM_SOURCE_TOPIC=orders.events \
-    ETL_KM_DESTINATION_URI="mongodb+srv://user:pass@cluster/db" \
-    ETL_KM_DESTINATION_DATABASE=mydb \
-    ETL_KM_DESTINATION_COLLECTION=orders_archive \
-    ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs \
+    KOZEN_ETL_KM_SOURCE_BROKERS=broker1:9092,broker2:9092 \
+    KOZEN_ETL_KM_SOURCE_TOPIC=orders.events \
+    KOZEN_ETL_KM_DESTINATION_URI="mongodb+srv://user:pass@cluster/db" \
+    KOZEN_ETL_KM_DESTINATION_DATABASE=mydb \
+    KOZEN_ETL_KM_DESTINATION_COLLECTION=orders_archive \
+    KOZEN_ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs \
     kozen --moduleLoad=@kozen/etl-mk --action=etl:start
 
     # Bidirectional pipeline (both processes active simultaneously)

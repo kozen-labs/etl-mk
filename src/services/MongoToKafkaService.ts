@@ -6,6 +6,9 @@ import type { KafkaProducerService } from './KafkaProducerService';
 import type { IEtlOptions, IMongoToKafkaConfig } from '../models/IEtlOptions';
 import type { IEtlMongoToKafkaTools } from '../models/IEtlTools';
 
+/**
+ * MongoDB change stream consumer that transforms events and publishes them to Kafka.
+ */
 export class MongoToKafkaService extends ChangeStreamService {
   private srvKafkaProducer?: KafkaProducerService;
   private mk?: IMongoToKafkaConfig;
@@ -15,6 +18,9 @@ export class MongoToKafkaService extends ChangeStreamService {
     this.srvKafkaProducer = dependency?.['srvKafkaProducer'] as KafkaProducerService;
   }
 
+  /**
+   * Connects the Kafka producer then delegates to ChangeStreamService for cursor lifecycle.
+   */
   async start(options: IEtlOptions): Promise<void> {
     const mk = options.mk;
     if (!mk?.delegate) {
@@ -45,6 +51,9 @@ export class MongoToKafkaService extends ChangeStreamService {
     });
   }
 
+  /**
+   * Captures the delegate's return value as the Kafka payload; null/undefined skips publish.
+   */
   async onChange(
     change: ChangeStreamDocument<Document>,
     delegate?: ITriggerDelegate,
@@ -115,6 +124,9 @@ export class MongoToKafkaService extends ChangeStreamService {
     }
   }
 
+  /**
+   * Disconnects the Kafka producer and stops the change stream cursor.
+   */
   async stop(): Promise<void> {
     await this.srvKafkaProducer?.disconnect();
     await super.stop();

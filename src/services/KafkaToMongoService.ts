@@ -8,6 +8,9 @@ import type { MongoWriterService } from './MongoWriterService';
 import type { IKafkaDelegate } from '../models/IEtlDelegate';
 import type { IEtlOptions, IKafkaToMongoConfig } from '../models/IEtlOptions';
 
+/**
+ * Kafka consumer that writes transformed messages to MongoDB with retry and DLQ routing.
+ */
 export class KafkaToMongoService extends BaseService {
   private srvKafkaConsumer?: KafkaConsumerService;
   private srvKafkaProducer?: KafkaProducerService;
@@ -20,6 +23,9 @@ export class KafkaToMongoService extends BaseService {
     this.srvMongoWriter   = dependency?.['srvMongoWriter']   as MongoWriterService;
   }
 
+  /**
+   * Resolves the delegate via IoC, connects consumer and writer, then enters the message loop.
+   */
   async start(options: IEtlOptions): Promise<void> {
     const km = options.km;
     if (!km?.delegate) {
@@ -74,6 +80,9 @@ export class KafkaToMongoService extends BaseService {
     );
   }
 
+  /**
+   * Retry-then-DLQ loop: commits the offset only after a successful write or DLQ routing.
+   */
   async onMessage(
     payload: EachMessagePayload,
     delegate: IKafkaDelegate,
@@ -168,6 +177,9 @@ export class KafkaToMongoService extends BaseService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Disconnects the Kafka consumer and the MongoDB writer.
+   */
   async stop(): Promise<void> {
     await this.srvKafkaConsumer?.disconnect();
     await this.srvMongoWriter?.disconnect();

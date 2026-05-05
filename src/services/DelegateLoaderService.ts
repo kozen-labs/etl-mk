@@ -5,12 +5,13 @@ import path from 'path';
 type AnyDelegate = Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined>;
 
 /**
- * Utility for loading delegate modules from the filesystem.
- * Use this when you need to load a delegate outside of the Kozen IoC container.
- * For pipeline services, prefer IoC-based resolution via options.sourceDelegate / options.destinationDelegate.
+ * Loads delegate modules from disk; prefer IoC resolution inside pipeline services.
  */
 export class DelegateLoaderService extends BaseService {
 
+  /**
+   * Resolves and imports the delegate file; auto-detects ESM (.mjs) vs CJS from the extension.
+   */
   async loadFromFile(filePath: string, delegateType?: string): Promise<AnyDelegate> {
     const resolved = path.resolve(filePath);
     const type = delegateType ?? this.detectType(resolved);
@@ -38,6 +39,10 @@ export class DelegateLoaderService extends BaseService {
     }
   }
 
+  /**
+   * Selects the matching handler by operationType, then falls back to message → on → default;
+   * returns event unchanged when no handler is found.
+   */
   async dispatch(delegate: AnyDelegate, event: unknown, tools: unknown, operationType?: string): Promise<unknown> {
     const specific = operationType ? delegate[operationType] : undefined;
     const fallback = delegate['message'] ?? delegate['on'] ?? delegate['default'];
