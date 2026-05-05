@@ -48,7 +48,7 @@ export class EtlCLIController extends CLIController {
 
     mk['destination'] = mk['destination'] ?? {};
     const mkDst       = mk['destination'] as Record<string, unknown>;
-    mkDst['brokers']  = mkDst['brokers']  ?? (process.env['KOZEN_ETL_MK_DESTINATION_BROKERS']?.split(','));
+    mkDst['brokers']  = mkDst['brokers']  ?? (parsed['mk.destination.brokers'] as string | undefined)?.split(',') ?? (process.env['KOZEN_ETL_MK_DESTINATION_BROKERS']?.split(','));
     mkDst['topic']    = mkDst['topic']    ?? parsed['mk.destination.topic']    ?? process.env['KOZEN_ETL_MK_DESTINATION_TOPIC'];
     mkDst['clientId'] = mkDst['clientId'] ?? parsed['mk.destination.clientId'] ?? process.env['KOZEN_ETL_MK_DESTINATION_CLIENT_ID'] ?? 'etl-mk';
     mkDst['ssl']      = mkDst['ssl']      ?? (process.env['KOZEN_ETL_MK_DESTINATION_SSL'] === 'true');
@@ -65,7 +65,7 @@ export class EtlCLIController extends CLIController {
 
     km['source'] = km['source'] ?? {};
     const kmSrc  = km['source'] as Record<string, unknown>;
-    kmSrc['brokers']  = kmSrc['brokers']  ?? (process.env['KOZEN_ETL_KM_SOURCE_BROKERS']?.split(','));
+    kmSrc['brokers']  = kmSrc['brokers']  ?? (parsed['km.source.brokers'] as string | undefined)?.split(',') ?? (process.env['KOZEN_ETL_KM_SOURCE_BROKERS']?.split(','));
     kmSrc['topic']    = kmSrc['topic']    ?? parsed['km.source.topic']    ?? process.env['KOZEN_ETL_KM_SOURCE_TOPIC'];
     kmSrc['groupId']  = kmSrc['groupId']  ?? parsed['km.source.groupId']  ?? process.env['KOZEN_ETL_KM_SOURCE_GROUP_ID']  ?? 'etl-mk-group';
     kmSrc['clientId'] = kmSrc['clientId'] ?? parsed['km.source.clientId'] ?? process.env['KOZEN_ETL_KM_SOURCE_CLIENT_ID'] ?? 'etl-km';
@@ -96,7 +96,7 @@ export class EtlCLIController extends CLIController {
     const flow = this.getId(args as never);
     try {
       const filled  = await this.fill((args ?? []) as IArgs);
-      const options = this.buildOptions(filled as unknown as Record<string, unknown>);
+      const options = this.buildOptions(filled as unknown as Record<string, unknown>, flow);
       this.logger?.info({
         flow,
         src: 'EtlMk:EtlCLIController:start',
@@ -158,11 +158,12 @@ export class EtlCLIController extends CLIController {
       data: { mk: !!mk?.['delegate'], km: !!km?.['delegate'] } });
   }
 
-  private buildOptions(filled: Record<string, unknown>): IEtlOptions {
+  private buildOptions(filled: Record<string, unknown>, flow?: string): IEtlOptions {
     const mk = filled['mk'] as Record<string, unknown>;
     const km = filled['km'] as Record<string, unknown>;
 
     return {
+      flow,
       mk: mk?.['delegate'] ? mk as unknown as IMongoToKafkaConfig : undefined,
       km: km?.['delegate'] ? km as unknown as IKafkaToMongoConfig : undefined
     };

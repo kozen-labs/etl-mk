@@ -32,8 +32,10 @@
     "dev": "ts-node node_modules/@kozen/engine/dist/bin/kozen.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "peerDependencies": {
+    "@kozen/engine": "^1.1.15"
+  },
   "dependencies": {
-    "@kozen/engine": "^1.1.15",
     "@kozen/trigger": "^1.0.7",
     "kafkajs": "2.2.4"
   },
