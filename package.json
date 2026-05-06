@@ -16,7 +16,7 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist/*",
-    "cfg/*",
+    "cfg/config.json",
     "LICENSE",
     "README.md"
   ],
