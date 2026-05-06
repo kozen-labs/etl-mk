@@ -1,50 +1,90 @@
-# @kozen/etl-mk
+# 🚀 Kozen ETL MongoDB — Kafka
 
 Bi-directional MongoDB ↔ Kafka ETL pipeline module for the [Kozen](https://github.com/kozen-labs) framework.
 
-Define one delegate file to run a single pipeline direction, or define both for a full bidirectional pipeline. Each direction is an independent process controlled by its own configuration.
+Define one delegate file to run a single pipeline direction, or define both for a full
+bidirectional pipeline. Each direction is an independent process controlled by its own
+configuration.
 
 ---
 
-## How it works
+## 🌟 Key Features
 
-```
-MongoDB change stream ──► MK delegate ──► Kafka topic
-Kafka topic ──────────► KM delegate ──► MongoDB collection
-```
-
-A **delegate** is a plain `.mjs` or `.cjs` file that exports handler functions. The pipeline loads the delegate at startup and calls the appropriate handler for each event. Handlers return the transformed payload, or `null`/`undefined` to skip.
-
-The MK direction uses `@kozen/trigger`'s `ChangeStreamService` under the hood. The KM direction implements at-least-once delivery with configurable retry and dead-letter routing.
+- **Bi-directional in one process** — MongoDB → Kafka (MK) and Kafka → MongoDB (KM) run concurrently, each controlled by an independent delegate
+- **Delegate-driven transforms** — your code handles only the business logic; the module manages connections, retries, and delivery guarantees
+- **At-least-once delivery** — the KM pipeline commits Kafka offsets only after a successful write or dead-letter routing; configurable retry with exponential backoff
+- **IoC-native delegate loading** — ESM (`.mjs`) and CJS (`.cjs`) delegates are resolved through the Kozen container; the same delegate can be reused across modules
+- **Built on `@kozen/trigger`** — reuses `ChangeStreamService` for the MK direction; no change stream reimplementation
+- **Zero-boilerplate activation** — set a delegate file variable to enable a direction; omit it to disable; no mode flags required
+- **Structured logging** — all output via Kozen `logger:service`; zero `console.log`; PII-safe at `INFO` level
+- **Full TypeScript declarations** — `IEtlMongoToKafkaTools extends ITriggerTools`; all public types exported from the barrel
 
 ---
 
-## Install
+## ⚡ Why Use This?
+
+Wiring MongoDB change streams to Kafka, or consuming Kafka messages into MongoDB, requires
+setting up KafkaJS producers and consumers, MongoDB cursors, offset management, retry loops,
+and dead-letter routing — all before writing a single line of business logic.
+
+Kozen ETL MongoDB — Kafka handles that infrastructure layer. Provide a delegate file that
+transforms each event; the module manages connections, retries, and delivery guarantees.
+Because delegates receive `tools.assistant` (the Kozen IoC container), they can compose
+with `@kozen/secret`, `@kozen/iam-rectification`, and any other module in the ecosystem.
+
+---
+
+## 📦 Installation
 
 ```bash
 npm install @kozen/etl-mk
 ```
 
-Requires Node.js 18 or later. `kafkajs` is bundled as a runtime dependency. A Kafka cluster and a MongoDB replica set or Atlas cluster are required at runtime.
+Requires Node.js 18 or later. `kafkajs` is bundled as a runtime dependency. A Kafka
+cluster and a MongoDB replica set or Atlas cluster are required at runtime.
 
----
-
-## Quick reference
+Quick commands:
 
 ```bash
 # Start (reads KOZEN_ETL_* from environment or --envFile)
 npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
 
-# Validate configuration without connecting to any service
+# Validate configuration without connecting
 npx kozen --moduleLoad=@kozen/etl-mk --action=etl:validate --envFile=.env
 
-# Print full help with all flags and environment variables
+# Print full help
 npx kozen --moduleLoad=@kozen/etl-mk --action=etl:help
 ```
 
 ---
 
-## Quick start
+## 📚 Documentation
+
+| Page | Description |
+|---|---|
+| [Get Started](https://github.com/kozen-labs/etl-mk/wiki/Get-Started) | Installation and minimal working examples |
+| [Configuration](https://github.com/kozen-labs/etl-mk/wiki/Configuration) | Full `KOZEN_ETL_*` variable reference and `.env` templates |
+| [ETL via CLI](https://github.com/kozen-labs/etl-mk/wiki/ETL-via-CLI) | CLI actions, flags, and examples |
+| [Delegate](https://github.com/kozen-labs/etl-mk/wiki/Delegate) | Writing MK and KM delegate handlers; error handling and DLQ |
+| [API](https://github.com/kozen-labs/etl-mk/wiki/API) | Programmatic SDK — types and service classes |
+| [Kozen Integration](https://github.com/kozen-labs/etl-mk/wiki/Kozen-Integration) | IoC tokens, module composition, delegate loading internals |
+| [Contributing Policy](https://github.com/kozen-labs/etl-mk/wiki/POLICY) | Licence, disclaimer, branch model, code standards |
+
+**External resources:**
+
+- [`@kozen/engine`](https://github.com/kozen-labs/engine/wiki) — Kozen Task Execution Framework
+- [`@kozen/trigger`](https://github.com/kozen-labs/trigger/wiki) — self-hosted MongoDB change stream triggers
+- [npm: @kozen/etl-mk](https://www.npmjs.com/package/@kozen/etl-mk) — package registry
+- [GitHub repository](https://github.com/kozen-labs/etl-mk) — source and issues
+- [MongoDB Change Streams](https://www.mongodb.com/docs/manual/changeStreams/) — official MongoDB documentation
+- [kafkajs](https://github.com/tulios/kafkajs) — Kafka client for Node.js
+
+> This project is open source and distributed under the terms described in the
+> [Contributing Policy and Usage Disclaimer](https://github.com/kozen-labs/etl-mk/wiki/POLICY).
+
+---
+
+## 🚀 Quick start
 
 ### MongoDB → Kafka
 
@@ -63,7 +103,7 @@ export async function insert(change, tools) {
 Set the required variables and run:
 
 ```bash
-KOZEN_ETL_MK_SOURCE_URI=mongodb+srv://user:pass@cluster.mongodb.net/ \
+KOZEN_ETL_MK_SOURCE_URI=mongodb+srv://appUser:secret@cluster.mongodb.net/ \
 KOZEN_ETL_MK_SOURCE_DATABASE=mydb \
 KOZEN_ETL_MK_SOURCE_COLLECTION=orders \
 KOZEN_ETL_MK_DESTINATION_BROKERS=broker1:9092 \
@@ -84,7 +124,7 @@ export async function message(msg, tools) {
 ```bash
 KOZEN_ETL_KM_SOURCE_BROKERS=broker1:9092 \
 KOZEN_ETL_KM_SOURCE_TOPIC=orders.events \
-KOZEN_ETL_KM_DESTINATION_URI=mongodb+srv://user:pass@cluster.mongodb.net/ \
+KOZEN_ETL_KM_DESTINATION_URI=mongodb+srv://appUser:secret@cluster.mongodb.net/ \
 KOZEN_ETL_KM_DESTINATION_DATABASE=mydb \
 KOZEN_ETL_KM_DESTINATION_COLLECTION=orders_archive \
 KOZEN_ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs \
@@ -93,7 +133,7 @@ npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start
 
 ### Bidirectional pipeline
 
-Configure both `KOZEN_ETL_MK_*` and `KOZEN_ETL_KM_*` in the same `.env` file. Copy a ready-made template from the package:
+Configure both `KOZEN_ETL_MK_*` and `KOZEN_ETL_KM_*` in the same `.env` file:
 
 ```bash
 cp node_modules/@kozen/etl-mk/cfg/env.bidirectional.example .env
@@ -103,21 +143,7 @@ npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
 
 ---
 
-## Documentation
-
-| Page | Description |
-|---|---|
-| [Get Started](https://github.com/kozen-labs/etl-mk/wiki/Get-Started) | Installation and minimal working examples |
-| [Configuration](https://github.com/kozen-labs/etl-mk/wiki/Configuration) | Full `KOZEN_ETL_*` variable reference and `.env` templates |
-| [ETL via CLI](https://github.com/kozen-labs/etl-mk/wiki/ETL-via-CLI) | CLI actions, flags, and examples |
-| [Delegate](https://github.com/kozen-labs/etl-mk/wiki/Delegate) | Writing MK and KM delegate handlers; error handling and DLQ |
-| [API](https://github.com/kozen-labs/etl-mk/wiki/API) | Programmatic SDK — types and service classes |
-| [Kozen Integration](https://github.com/kozen-labs/etl-mk/wiki/Kozen-Integration) | IoC tokens, module composition, delegate loading internals |
-| [Contributing Policy](https://github.com/kozen-labs/etl-mk/wiki/POLICY) | Branch model, PR requirements, code standards |
-
----
-
-## Deployment
+## 🔧 Deployment
 
 ### PM2
 
@@ -162,7 +188,7 @@ CMD ["npx", "kozen", "--moduleLoad=@kozen/etl-mk", "--action=etl:start"]
 
 ```bash
 docker run -d \
-  -e KOZEN_ETL_MK_SOURCE_URI="mongodb+srv://..." \
+  -e KOZEN_ETL_MK_SOURCE_URI="mongodb+srv://appUser:secret@cluster.mongodb.net/" \
   -e KOZEN_ETL_MK_SOURCE_DATABASE=production \
   -e KOZEN_ETL_MK_SOURCE_COLLECTION=orders \
   -e KOZEN_ETL_MK_DESTINATION_BROKERS="broker1:9092" \
@@ -174,7 +200,7 @@ docker run -d \
 
 ---
 
-## Development
+## 🛠️ Development
 
 ```bash
 npm install
@@ -186,12 +212,3 @@ npx kozen --moduleLoad=@kozen/etl-mk --action=etl:validate --envFile=.env
 ```
 
 The module entry point is [src/index.ts](src/index.ts). The compiled output is written to `dist/`.
-
----
-
-## Related
-
-- [`@kozen/engine`](https://github.com/kozen-labs/engine) — Kozen Task Execution Framework
-- [`@kozen/trigger`](https://github.com/kozen-labs/trigger/wiki) — self-hosted MongoDB change stream triggers
-- [MongoDB Change Streams](https://www.mongodb.com/docs/manual/changeStreams/)
-- [kafkajs](https://github.com/tulios/kafkajs) — Kafka client for Node.js
