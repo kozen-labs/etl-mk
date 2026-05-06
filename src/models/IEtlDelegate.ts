@@ -1,29 +1,12 @@
-import type { ChangeStreamDocument, Document } from 'mongodb';
-import type { IEtlMongoToKafkaTools, IEtlKafkaToMongoTools } from './IEtlTools';
+import type { ITriggerTools } from '@kozen/trigger';
 
-export type MongoToKafkaHandler = (
-  change: ChangeStreamDocument<Document>,
-  tools: IEtlMongoToKafkaTools
-) => Promise<unknown>;
-
-export type KafkaToMongoHandler = (
-  message: unknown,
-  tools: IEtlKafkaToMongoTools
-) => Promise<unknown>;
-
-export interface IEtlMongoToKafkaDelegate {
-  insert?:     MongoToKafkaHandler;
-  update?:     MongoToKafkaHandler;
-  replace?:    MongoToKafkaHandler;
-  delete?:     MongoToKafkaHandler;
-  invalidate?: MongoToKafkaHandler;
-  default?:    MongoToKafkaHandler;
-  on?:         MongoToKafkaHandler;
-}
-
-export interface IEtlKafkaToMongoDelegate {
-  message?: KafkaToMongoHandler;
-  insert?:  KafkaToMongoHandler;
-  on?:      KafkaToMongoHandler;
-  default?: KafkaToMongoHandler;
+/**
+ * Delegate interface for the Kafka → MongoDB pipeline.
+ * Handlers receive the parsed Kafka message and return the document to write.
+ * Return null or undefined to skip the write.
+ */
+export interface IKafkaDelegate {
+  message?: (msg: unknown, tools?: ITriggerTools) => Promise<unknown> | unknown;
+  on?:      (msg: unknown, tools?: ITriggerTools) => Promise<unknown> | unknown;
+  default?: (msg: unknown, tools?: ITriggerTools) => Promise<unknown> | unknown;
 }

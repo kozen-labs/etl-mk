@@ -4,11 +4,15 @@ import path from 'path';
 import cli from './configs/cli.json';
 import ioc from './configs/ioc.json';
 
+/**
+ * Kozen module entry point; registers all ETL pipeline services and the CLI controller.
+ */
 export class EtlModule extends KzModule {
   constructor(dependency?: unknown) {
     super(dependency as never);
     this.metadata.alias = 'etl';
     try {
+      // sync read is acceptable here: constructor runs once at startup for a single small file
       const pkg = JSON.parse(
         fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')
       ) as Record<string, string>;
@@ -26,26 +30,25 @@ export class EtlModule extends KzModule {
   public register(
     config: IConfig | null
   ): Promise<Record<string, IDependency> | null> {
-    let dep: Record<string, unknown> = { ...ioc };
-
-    if (config?.type === 'cli') {
-      dep = { ...dep, ...cli };
+    let dep: Record<string, unknown>;
+    switch (config?.type) {
+      case 'cli': dep = { ...ioc, ...cli }; break;
+      default:    dep = { ...ioc };         break;
     }
-
     return Promise.resolve(this.fix(dep as IDependencyMap) as Record<string, IDependency>);
   }
 }
 
 export default EtlModule;
 
-export type { IEtlOptions, IEtlSourceMongo, IEtlSourceKafka, IEtlDestinationKafka, IEtlDestinationMongo, EtlMode } from './models/IEtlOptions';
-export type { IEtlMongoToKafkaTools, IEtlKafkaToMongoTools } from './models/IEtlTools';
-export type { IEtlMongoToKafkaDelegate, IEtlKafkaToMongoDelegate, MongoToKafkaHandler, KafkaToMongoHandler } from './models/IEtlDelegate';
-export { DelegateLoaderService }  from './services/DelegateLoaderService';
-export { KafkaProducerService }   from './services/KafkaProducerService';
-export { KafkaConsumerService }   from './services/KafkaConsumerService';
-export { MongoWriterService }     from './services/MongoWriterService';
-export { MongoToKafkaService }    from './services/MongoToKafkaService';
-export { KafkaToMongoService }    from './services/KafkaToMongoService';
-export { EtlPipelineService }     from './services/EtlPipelineService';
-export { EtlCLIController }       from './controllers/EtlCLIController';
+export type { IEtlOptions, IMongoConfig, IKafkaConfig, IMongoToKafkaConfig, IKafkaToMongoConfig } from './models/IEtlOptions';
+export type { IEtlMongoToKafkaTools } from './models/IEtlTools';
+export type { IKafkaDelegate }        from './models/IEtlDelegate';
+export { DelegateLoaderService } from './services/DelegateLoaderService';
+export { KafkaProducerService }  from './services/KafkaProducerService';
+export { KafkaConsumerService }  from './services/KafkaConsumerService';
+export { MongoWriterService }    from './services/MongoWriterService';
+export { MongoToKafkaService }   from './services/MongoToKafkaService';
+export { KafkaToMongoService }   from './services/KafkaToMongoService';
+export { EtlPipelineService }    from './services/EtlPipelineService';
+export { EtlCLIController }      from './controllers/EtlCLIController';

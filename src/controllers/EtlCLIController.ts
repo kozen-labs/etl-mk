@@ -1,189 +1,171 @@
-import { CLIController, IArgs } from '@kozen/engine';
+import path from 'node:path';
+import { CLIController, FileService, IArgs, IIoC, ILogger, IModule } from '@kozen/engine';
 import type { EtlPipelineService } from '../services/EtlPipelineService';
-import type { IEtlOptions, IEtlSourceMongo, IEtlSourceKafka, IEtlDestinationKafka, IEtlDestinationMongo } from '../models/IEtlOptions';
+import type { IEtlOptions, IMongoToKafkaConfig, IKafkaToMongoConfig } from '../models/IEtlOptions';
 
+/**
+ * CLI controller for the ETL module — dispatches etl:start, etl:validate, etl:help.
+ */
 export class EtlCLIController extends CLIController {
   private srvPipeline?: EtlPipelineService;
 
-  constructor(dependency?: Record<string, unknown>) {
-    super(dependency as never);
-    this.srvPipeline = dependency?.['srvPipeline'] as EtlPipelineService;
+  constructor(dependency?: { assistant: IIoC; logger: ILogger; srvPipeline?: EtlPipelineService; srvFile?: FileService }) {
+    super(dependency);
+    this.srvPipeline = dependency?.srvPipeline;
   }
 
+  /**
+   * Renders the inline help text from src/docs/etl-mk.txt.
+   */
   async help(): Promise<void> {
-    const mod = await this.assistant?.get('module:@kozen/etl-mk');
+    const mod = await this.assistant?.get<IModule>('module:@kozen/etl-mk');
+    const dir = process.env['DOCS_DIR'] ?? path.resolve(__dirname, '../docs');
+    const body = await this.srvFile?.select('etl-mk', dir);
     super.help({
-      title: `'${(mod as Record<string, Record<string, string>>)?.['metadata']?.['alias'] ?? 'etl'}' — etl-mk`,
-      body: `
-Bi-directional MongoDB ↔ Kafka ETL pipeline.
-
-Usage:
-  kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
-
-Modes:
-  ETL_MODE=mongo-to-kafka   Watch a MongoDB collection → publish to Kafka topic
-  ETL_MODE=kafka-to-mongo   Consume a Kafka topic      → write to MongoDB collection
-
-Source (mongo-to-kafka):
-  ETL_SOURCE_URI            MongoDB connection string
-  ETL_SOURCE_DATABASE       Source database name
-  ETL_SOURCE_COLLECTION     Source collection to watch
-
-Destination (mongo-to-kafka):
-  ETL_DESTINATION_BROKERS   Comma-separated Kafka brokers
-  ETL_DESTINATION_TOPIC     Target Kafka topic
-  ETL_DESTINATION_CLIENT_ID Kafka client ID (default: etl-mk)
-  ETL_DESTINATION_DLQ_TOPIC Dead-letter topic (default: <topic>-dlq)
-
-Source (kafka-to-mongo):
-  ETL_SOURCE_BROKERS        Comma-separated Kafka brokers
-  ETL_SOURCE_TOPIC          Kafka topic to consume
-  ETL_SOURCE_GROUP_ID       Consumer group ID (default: etl-mk-group)
-
-Destination (kafka-to-mongo):
-  ETL_DESTINATION_URI        MongoDB connection string
-  ETL_DESTINATION_DATABASE   Target database name
-  ETL_DESTINATION_COLLECTION Target collection
-  ETL_DESTINATION_WRITE_MODE insert | upsert (default: insert)
-  ETL_DESTINATION_DLQ_COLLECTION Dead-letter collection (default: <collection>_dlq)
-
-Delegate:
-  ETL_DELEGATE_FILE         Absolute path to delegate file (omit for passthrough)
-  ETL_DELEGATE_TYPE         esm | cjs (auto-detected from extension)
-
-Logging:
-  KOZEN_LOG_LEVEL           DEBUG | INFO | WARN | ERROR (default: INFO)
-  KOZEN_LOG_TYPE            object | json (default: object)
-      `
+      title:   `'${mod?.metadata?.alias ?? 'etl'}' from '${mod?.metadata?.name ?? '@kozen/etl-mk'}'`,
+      body,
+      version: mod?.metadata?.version,
+      uri:     mod?.metadata?.uri
     });
   }
 
+  /**
+   * Parses CLI args and applies KOZEN_ETL_* environment variable fallbacks.
+   */
   async fill(args: string[] | IArgs): Promise<IArgs> {
-    const parsed = this.extract(args) as IArgs & Record<string, unknown>;
+    const parsed     = this.extract(args) as IArgs & Record<string, unknown>;
+    const moduleType = parsed['delegateType'] as string | undefined ?? process.env['KOZEN_ETL_DELEGATE_TYPE'];
 
-    parsed['mode'] = parsed['mode'] ?? process.env['ETL_MODE'];
+    // ── MK pipeline: MongoDB → Kafka ─────────────────────────────────────────
+    parsed['mk'] = parsed['mk'] ?? {};
+    const mk    = parsed['mk'] as Record<string, unknown>;
 
-    parsed['file']         = parsed['file']         ?? process.env['ETL_DELEGATE_FILE'];
-    parsed['delegateType'] = parsed['delegateType'] ?? process.env['ETL_DELEGATE_TYPE'];
+    mk['source'] = mk['source'] ?? {};
+    const mkSrc  = mk['source'] as Record<string, unknown>;
+    mkSrc['uri']        = mkSrc['uri']        ?? parsed['mk.source.uri']        ?? process.env['KOZEN_ETL_MK_SOURCE_URI'];
+    mkSrc['database']   = mkSrc['database']   ?? parsed['mk.source.database']   ?? process.env['KOZEN_ETL_MK_SOURCE_DATABASE'];
+    mkSrc['collection'] = mkSrc['collection'] ?? parsed['mk.source.collection'] ?? process.env['KOZEN_ETL_MK_SOURCE_COLLECTION'];
 
-    // source.*
-    parsed['source'] = parsed['source'] ?? {};
-    const src = parsed['source'] as Record<string, unknown>;
+    mk['destination'] = mk['destination'] ?? {};
+    const mkDst       = mk['destination'] as Record<string, unknown>;
+    mkDst['brokers']  = mkDst['brokers']  ?? (parsed['mk.destination.brokers'] as string | undefined)?.split(',') ?? (process.env['KOZEN_ETL_MK_DESTINATION_BROKERS']?.split(','));
+    mkDst['topic']    = mkDst['topic']    ?? parsed['mk.destination.topic']    ?? process.env['KOZEN_ETL_MK_DESTINATION_TOPIC'];
+    mkDst['clientId'] = mkDst['clientId'] ?? parsed['mk.destination.clientId'] ?? process.env['KOZEN_ETL_MK_DESTINATION_CLIENT_ID'] ?? 'etl-mk';
+    mkDst['ssl']      = mkDst['ssl']      ?? (process.env['KOZEN_ETL_MK_DESTINATION_SSL'] === 'true');
 
-    src['uri']        = src['uri']        ?? parsed['source.uri']        ?? process.env['ETL_SOURCE_URI'];
-    src['database']   = src['database']   ?? parsed['source.database']   ?? process.env['ETL_SOURCE_DATABASE'];
-    src['collection'] = src['collection'] ?? parsed['source.collection'] ?? process.env['ETL_SOURCE_COLLECTION'];
-    src['brokers']    = src['brokers']    ?? (process.env['ETL_SOURCE_BROKERS']?.split(','));
-    src['topic']      = src['topic']      ?? parsed['source.topic']      ?? process.env['ETL_SOURCE_TOPIC'];
-    src['groupId']    = src['groupId']    ?? parsed['source.groupId']    ?? process.env['ETL_SOURCE_GROUP_ID']    ?? 'etl-mk-group';
-    src['clientId']   = src['clientId']   ?? parsed['source.clientId']   ?? process.env['ETL_SOURCE_CLIENT_ID']   ?? 'etl-mk';
+    const mkFile = parsed['mk.delegateFile'] as string | undefined ?? process.env['KOZEN_ETL_MK_DELEGATE_FILE'];
+    const mkKey  = parsed['mk.delegateKey']  as string | undefined ?? process.env['KOZEN_ETL_MK_DELEGATE_KEY'] ?? 'etl-mk:delegate:source';
+    if (mkFile) mk['delegate'] = { key: mkKey, file: mkFile, type: 'instance', moduleType };
 
-    // destination.*
-    parsed['destination'] = parsed['destination'] ?? {};
-    const dst = parsed['destination'] as Record<string, unknown>;
+    mk['dlqTopic'] = mk['dlqTopic'] ?? parsed['mk.dlqTopic'] ?? process.env['KOZEN_ETL_MK_DLQ_TOPIC'];
 
-    dst['uri']           = dst['uri']           ?? parsed['destination.uri']           ?? process.env['ETL_DESTINATION_URI'];
-    dst['database']      = dst['database']      ?? parsed['destination.database']      ?? process.env['ETL_DESTINATION_DATABASE'];
-    dst['collection']    = dst['collection']    ?? parsed['destination.collection']    ?? process.env['ETL_DESTINATION_COLLECTION'];
-    dst['brokers']       = dst['brokers']       ?? (process.env['ETL_DESTINATION_BROKERS']?.split(','));
-    dst['topic']         = dst['topic']         ?? parsed['destination.topic']         ?? process.env['ETL_DESTINATION_TOPIC'];
-    dst['clientId']      = dst['clientId']      ?? parsed['destination.clientId']      ?? process.env['ETL_DESTINATION_CLIENT_ID']      ?? 'etl-mk';
-    dst['dlqTopic']      = dst['dlqTopic']      ?? parsed['destination.dlqTopic']      ?? process.env['ETL_DESTINATION_DLQ_TOPIC'];
-    dst['writeMode']     = dst['writeMode']     ?? parsed['destination.writeMode']     ?? process.env['ETL_DESTINATION_WRITE_MODE']     ?? 'insert';
-    dst['dlqCollection'] = dst['dlqCollection'] ?? parsed['destination.dlqCollection'] ?? process.env['ETL_DESTINATION_DLQ_COLLECTION'];
+    // ── KM pipeline: Kafka → MongoDB ─────────────────────────────────────────
+    parsed['km'] = parsed['km'] ?? {};
+    const km    = parsed['km'] as Record<string, unknown>;
+
+    km['source'] = km['source'] ?? {};
+    const kmSrc  = km['source'] as Record<string, unknown>;
+    kmSrc['brokers']  = kmSrc['brokers']  ?? (parsed['km.source.brokers'] as string | undefined)?.split(',') ?? (process.env['KOZEN_ETL_KM_SOURCE_BROKERS']?.split(','));
+    kmSrc['topic']    = kmSrc['topic']    ?? parsed['km.source.topic']    ?? process.env['KOZEN_ETL_KM_SOURCE_TOPIC'];
+    kmSrc['groupId']  = kmSrc['groupId']  ?? parsed['km.source.groupId']  ?? process.env['KOZEN_ETL_KM_SOURCE_GROUP_ID']  ?? 'etl-mk-group';
+    kmSrc['clientId'] = kmSrc['clientId'] ?? parsed['km.source.clientId'] ?? process.env['KOZEN_ETL_KM_SOURCE_CLIENT_ID'] ?? 'etl-km';
+    kmSrc['ssl']      = kmSrc['ssl']      ?? (process.env['KOZEN_ETL_KM_SOURCE_SSL'] === 'true');
+
+    km['destination'] = km['destination'] ?? {};
+    const kmDst       = km['destination'] as Record<string, unknown>;
+    kmDst['uri']        = kmDst['uri']        ?? parsed['km.destination.uri']        ?? process.env['KOZEN_ETL_KM_DESTINATION_URI'];
+    kmDst['database']   = kmDst['database']   ?? parsed['km.destination.database']   ?? process.env['KOZEN_ETL_KM_DESTINATION_DATABASE'];
+    kmDst['collection'] = kmDst['collection'] ?? parsed['km.destination.collection'] ?? process.env['KOZEN_ETL_KM_DESTINATION_COLLECTION'];
+
+    const kmFile = parsed['km.delegateFile'] as string | undefined ?? process.env['KOZEN_ETL_KM_DELEGATE_FILE'];
+    const kmKey  = parsed['km.delegateKey']  as string | undefined ?? process.env['KOZEN_ETL_KM_DELEGATE_KEY'] ?? 'etl-mk:delegate:destination';
+    if (kmFile) km['delegate'] = { key: kmKey, file: kmFile, type: 'instance', moduleType };
+
+    km['writeMode']     = km['writeMode']     ?? parsed['km.writeMode']     ?? process.env['KOZEN_ETL_KM_DESTINATION_WRITE_MODE'] ?? 'insert';
+    km['dlqTopic']      = km['dlqTopic']      ?? parsed['km.dlqTopic']      ?? process.env['KOZEN_ETL_KM_DLQ_TOPIC'];
+    km['retryAttempts'] = km['retryAttempts'] ?? Number(process.env['KOZEN_ETL_KM_RETRY_ATTEMPTS'] ?? 3);
+    km['retryDelayMs']  = km['retryDelayMs']  ?? Number(process.env['KOZEN_ETL_KM_RETRY_DELAY_MS']  ?? 1000);
 
     return parsed;
   }
 
+  /**
+   * Starts the ETL pipeline with the resolved options.
+   */
   async start(args?: string[] | IArgs): Promise<{ await: boolean }> {
     const flow = this.getId(args as never);
-
     try {
-      const filled = await this.fill((args ?? []) as IArgs);
-      const options = this.buildOptions(filled as unknown as Record<string, unknown>);
-
+      const filled  = await this.fill((args ?? []) as IArgs);
+      const options = this.buildOptions(filled as unknown as Record<string, unknown>, flow);
       this.logger?.info({
         flow,
-        src: 'EtlMk:CLI:start',
-        message: `Starting ETL pipeline`,
-        data: { mode: options.mode }
+        src: 'EtlMk:EtlCLIController:start',
+        message: 'Starting ETL pipeline',
+        data: { mk: !!options.mk?.delegate, km: !!options.km?.delegate }
       });
-
       return await this.srvPipeline?.start(options) ?? { await: false };
     } catch (error: unknown) {
       this.logger?.error({
         flow,
-        src: 'EtlMk:CLI:start',
+        src: 'EtlMk:EtlCLIController:start',
         message: `Failed to start ETL pipeline: ${(error as Error).message}`
       });
       return { await: false };
     }
   }
 
+  /**
+   * Validates required configuration without starting the pipeline.
+   */
   async validate(args?: string[] | IArgs): Promise<void> {
-    const flow = this.getId(args as never);
+    const flow   = this.getId(args as never);
     const filled = await this.fill((args ?? []) as IArgs);
-
     const missing: string[] = [];
-    const mode = filled['mode'] as string;
 
-    if (!mode) missing.push('ETL_MODE');
+    const mk    = filled['mk'] as Record<string, unknown> | undefined;
+    const mkSrc = mk?.['source'] as Record<string, unknown> | undefined;
+    const mkDst = mk?.['destination'] as Record<string, unknown> | undefined;
+    const km    = filled['km'] as Record<string, unknown> | undefined;
+    const kmSrc = km?.['source'] as Record<string, unknown> | undefined;
+    const kmDst = km?.['destination'] as Record<string, unknown> | undefined;
 
-    if (mode === 'mongo-to-kafka') {
-      const src = filled['source'] as Record<string, unknown>;
-      const dst = filled['destination'] as Record<string, unknown>;
-      if (!src['uri'])        missing.push('ETL_SOURCE_URI');
-      if (!src['database'])   missing.push('ETL_SOURCE_DATABASE');
-      if (!src['collection']) missing.push('ETL_SOURCE_COLLECTION');
-      if (!dst['brokers'])    missing.push('ETL_DESTINATION_BROKERS');
-      if (!dst['topic'])      missing.push('ETL_DESTINATION_TOPIC');
+    if (!mk?.['delegate'] && !km?.['delegate']) {
+      missing.push('KOZEN_ETL_MK_DELEGATE_FILE or KOZEN_ETL_KM_DELEGATE_FILE');
     }
 
-    if (mode === 'kafka-to-mongo') {
-      const src = filled['source'] as Record<string, unknown>;
-      const dst = filled['destination'] as Record<string, unknown>;
-      if (!src['brokers']) missing.push('ETL_SOURCE_BROKERS');
-      if (!src['topic'])   missing.push('ETL_SOURCE_TOPIC');
-      if (!dst['uri'])        missing.push('ETL_DESTINATION_URI');
-      if (!dst['database'])   missing.push('ETL_DESTINATION_DATABASE');
-      if (!dst['collection']) missing.push('ETL_DESTINATION_COLLECTION');
+    if (mk?.['delegate']) {
+      if (!mkSrc?.['uri'])        missing.push('KOZEN_ETL_MK_SOURCE_URI');
+      if (!mkSrc?.['database'])   missing.push('KOZEN_ETL_MK_SOURCE_DATABASE');
+      if (!mkSrc?.['collection']) missing.push('KOZEN_ETL_MK_SOURCE_COLLECTION');
+      if (!mkDst?.['brokers'])    missing.push('KOZEN_ETL_MK_DESTINATION_BROKERS');
+      if (!mkDst?.['topic'])      missing.push('KOZEN_ETL_MK_DESTINATION_TOPIC');
+    }
+
+    if (km?.['delegate']) {
+      if (!kmSrc?.['brokers'])    missing.push('KOZEN_ETL_KM_SOURCE_BROKERS');
+      if (!kmSrc?.['topic'])      missing.push('KOZEN_ETL_KM_SOURCE_TOPIC');
+      if (!kmDst?.['uri'])        missing.push('KOZEN_ETL_KM_DESTINATION_URI');
+      if (!kmDst?.['database'])   missing.push('KOZEN_ETL_KM_DESTINATION_DATABASE');
+      if (!kmDst?.['collection']) missing.push('KOZEN_ETL_KM_DESTINATION_COLLECTION');
     }
 
     if (missing.length > 0) {
-      this.logger?.error({
-        flow,
-        src: 'EtlMk:CLI:validate',
-        message: `Configuration incomplete`,
-        data: { missing }
-      });
+      this.logger?.error({ flow, src: 'EtlMk:EtlCLIController:validate', message: 'Configuration incomplete', data: { missing } });
       throw new Error(`Missing required configuration: ${missing.join(', ')}`);
     }
 
-    this.logger?.info({
-      flow,
-      src: 'EtlMk:CLI:validate',
-      message: `Configuration valid`,
-      data: { mode }
-    });
+    this.logger?.info({ flow, src: 'EtlMk:EtlCLIController:validate', message: 'Configuration valid',
+      data: { mk: !!mk?.['delegate'], km: !!km?.['delegate'] } });
   }
 
-  private buildOptions(filled: Record<string, unknown>): IEtlOptions {
-    const mode = filled['mode'] as IEtlOptions['mode'];
-
-    const source = mode === 'mongo-to-kafka'
-      ? filled['source'] as IEtlSourceMongo
-      : { ...(filled['source'] as IEtlSourceKafka) };
-
-    const destination = mode === 'mongo-to-kafka'
-      ? filled['destination'] as IEtlDestinationKafka
-      : filled['destination'] as IEtlDestinationMongo;
+  private buildOptions(filled: Record<string, unknown>, flow?: string): IEtlOptions {
+    const mk = filled['mk'] as Record<string, unknown>;
+    const km = filled['km'] as Record<string, unknown>;
 
     return {
-      mode,
-      delegateFile: filled['file']         as string | undefined,
-      delegateType: filled['delegateType'] as string | undefined,
-      source,
-      destination
+      flow,
+      mk: mk?.['delegate'] ? mk as unknown as IMongoToKafkaConfig : undefined,
+      km: km?.['delegate'] ? km as unknown as IKafkaToMongoConfig : undefined
     };
   }
 }

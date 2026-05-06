@@ -1,111 +1,134 @@
-import { BaseService } from '@kozen/engine';
-import { MongoClient } from 'mongodb';
+import { ChangeStreamDocument, Document } from 'mongodb';
 import { randomUUID } from 'crypto';
-import type { DelegateLoaderService } from './DelegateLoaderService';
+import { ChangeStreamService } from '@kozen/trigger';
+import type { ITriggerDelegate, ITriggerTools } from '@kozen/trigger';
 import type { KafkaProducerService } from './KafkaProducerService';
-import type { IEtlOptions, IEtlSourceMongo, IEtlDestinationKafka } from '../models/IEtlOptions';
+import type { IEtlOptions, IMongoToKafkaConfig } from '../models/IEtlOptions';
 import type { IEtlMongoToKafkaTools } from '../models/IEtlTools';
 
-export class MongoToKafkaService extends BaseService {
-  private srvDelegateLoader?: DelegateLoaderService;
+/**
+ * MongoDB change stream consumer that transforms events and publishes them to Kafka.
+ */
+export class MongoToKafkaService extends ChangeStreamService {
   private srvKafkaProducer?: KafkaProducerService;
-  private client?: MongoClient;
+  private mk?: IMongoToKafkaConfig;
 
   constructor(dependency?: Record<string, unknown>) {
-    super(dependency as { assistant: never; logger: never });
-    this.srvDelegateLoader = dependency?.['srvDelegateLoader'] as DelegateLoaderService;
-    this.srvKafkaProducer  = dependency?.['srvKafkaProducer']  as KafkaProducerService;
+    super(dependency as never);
+    this.srvKafkaProducer = dependency?.['srvKafkaProducer'] as KafkaProducerService;
   }
 
+  /**
+   * Connects the Kafka producer then delegates to ChangeStreamService for cursor lifecycle.
+   */
   async start(options: IEtlOptions): Promise<void> {
-    const source = options.source as IEtlSourceMongo;
-    const dest   = options.destination as IEtlDestinationKafka;
-    const flow   = randomUUID();
-    const dlqTopic = dest.dlqTopic ?? `${dest.topic}-dlq`;
+    const mk = options.mk;
+    if (!mk?.delegate) {
+      this.logger?.info({
+        flow: options.flow,
+        src: 'EtlMk:MongoToKafka:start',
+        message: 'No MK delegate defined. MongoDB→Kafka pipeline will not start.'
+      });
+      return;
+    }
 
-    await this.srvDelegateLoader?.load(options.delegateFile, options.delegateType);
-    await this.srvKafkaProducer?.connect(dest.brokers, dest.clientId ?? 'etl-mk', dest.ssl);
+    this.mk = mk;
 
-    this.client = new MongoClient(source.uri);
-    await this.client.connect();
+    await this.srvKafkaProducer?.connect(
+      mk.destination.brokers,
+      mk.destination.clientId ?? 'etl-mk',
+      mk.destination.ssl
+    );
 
-    const db         = this.client.db(source.database);
-    const collection = db.collection(source.collection);
-
-    this.logger?.info({
-      flow,
-      src: 'EtlMk:MongoToKafka:start',
-      message: `Pipeline started`,
-      data: { database: source.database, collection: source.collection, topic: dest.topic }
+    await super.start({
+      flow: options.flow ?? randomUUID(),
+      mdb: {
+        uri:        mk.source.uri,
+        database:   mk.source.database,
+        collection: mk.source.collection
+      },
+      opt: mk.delegate
     });
+  }
 
-    const changeStream = collection.watch();
+  /**
+   * Captures the delegate's return value as the Kafka payload; null/undefined skips publish.
+   */
+  async onChange(
+    change: ChangeStreamDocument<Document>,
+    delegate?: ITriggerDelegate,
+    tools?: ITriggerTools
+  ): Promise<void> {
+    const mk = this.mk;
+    if (!mk || !delegate) return;
 
-    changeStream.on('change', async (rawChange) => {
-      const change = rawChange as unknown as Record<string, unknown>;
-      const eventFlow = randomUUID();
-      const docKey = change['documentKey'] as Record<string, unknown> | undefined;
-      let messageKey = docKey ? String(docKey['_id'] ?? eventFlow) : eventFlow;
-      let messageHeaders: Record<string, string> = {};
+    const deadLetterTopic = mk.dlqTopic ?? `${mk.destination.topic}-dlq`;
 
-      const tools: IEtlMongoToKafkaTools = {
-        mode: 'mongo-to-kafka',
-        flow: eventFlow,
-        db,
-        collection,
-        dbName: source.database,
-        collectionName: source.collection,
-        assistant: this.assistant ?? undefined,
-        setMessageKey:     (k) => { messageKey = k; },
-        setMessageHeaders: (h) => { messageHeaders = h; }
-      };
+    const docKey = (change as unknown as Record<string, unknown>)['documentKey'] as
+      | Record<string, unknown>
+      | undefined;
+    let messageKey     = docKey ? String(docKey['_id'] ?? randomUUID()) : randomUUID();
+    let messageHeaders: Record<string, string> = {};
 
-      const t0 = Date.now();
+    const etlTools: IEtlMongoToKafkaTools = {
+      ...(tools ?? {}),
+      setMessageKey:     (k) => { messageKey = k; },
+      setMessageHeaders: (h) => { messageHeaders = h; }
+    } as IEtlMongoToKafkaTools;
 
-      try {
-        const operationType = change['operationType'] as string;
-        const payload = await this.srvDelegateLoader?.dispatch(change, tools, operationType);
+    const specificHandler = delegate[change.operationType as keyof ITriggerDelegate];
+    const fallback = delegate.on ?? delegate.default;
+    const handler  = typeof specificHandler === 'function' ? specificHandler : fallback;
 
-        if (payload !== null && payload !== undefined) {
-          await this.srvKafkaProducer?.publish(dest.topic, messageKey, payload);
-          void messageHeaders;
+    if (typeof handler !== 'function') {
+      this.logger?.warn({
+        flow: tools?.flow,
+        src: 'EtlMk:MongoToKafka:onChange',
+        message: `No handler for operation type: ${change.operationType}`
+      });
+      return;
+    }
 
-          this.logger?.info({
-            flow: eventFlow,
-            src: 'EtlMk:MongoToKafka:change',
-            message: `Event published`,
-            data: { operationType, topic: dest.topic, durationMs: Date.now() - t0 }
-          });
-        }
-      } catch (error: unknown) {
-        const msg = (error as Error).message;
-        this.logger?.warn({
-          flow: eventFlow,
-          src: 'EtlMk:MongoToKafka:change',
-          message: `Event failed, routing to DLQ`,
-          data: { dlqTopic, error: msg }
-        });
+    const t0 = Date.now();
 
-        await this.srvKafkaProducer?.publishDLQ(dlqTopic, {
-          originalPayload: rawChange,
-          error: msg,
-          flow: eventFlow,
-          timestamp: new Date()
+    try {
+      // ITriggerDelegate types handlers as void, but ETL handlers return the Kafka payload.
+      const payload = await (handler as unknown as (
+        c: typeof change,
+        t: IEtlMongoToKafkaTools
+      ) => Promise<unknown>).call(this, change, etlTools);
+
+      if (payload !== null && payload !== undefined) {
+        await this.srvKafkaProducer?.publish(mk.destination.topic, messageKey, payload, messageHeaders);
+        this.logger?.info({
+          flow: tools?.flow,
+          src: 'EtlMk:MongoToKafka:onChange',
+          message: 'Event published',
+          data: { operationType: change.operationType, topic: mk.destination.topic, durationMs: Date.now() - t0 }
         });
       }
-    });
-
-    changeStream.on('error', (error) => {
-      this.logger?.error({
-        flow,
-        src: 'EtlMk:MongoToKafka:changeStream',
-        message: `Change stream error: ${error.message}`
+    } catch (error: unknown) {
+      const msg = (error as Error).message;
+      this.logger?.warn({
+        flow: tools?.flow,
+        src: 'EtlMk:MongoToKafka:onChange',
+        message: 'Event failed, routing to DLQ',
+        data: { dlqTopic: deadLetterTopic, error: msg }
       });
-    });
+      await this.srvKafkaProducer?.publishDLQ(deadLetterTopic, {
+        originalPayload: change,
+        error: msg,
+        flow: tools?.flow,
+        timestamp: new Date()
+      });
+    }
   }
 
+  /**
+   * Disconnects the Kafka producer and stops the change stream cursor.
+   */
   async stop(): Promise<void> {
     await this.srvKafkaProducer?.disconnect();
-    await this.client?.close();
+    await super.stop();
   }
 }

@@ -1,14 +1,4 @@
 {
-  "etl-mk:delegate-loader": {
-    "target": "DelegateLoaderService",
-    "type": "class",
-    "lifetime": "singleton",
-    "path": "services",
-    "dependencies": [
-      { "key": "assistant", "target": "IoC",            "type": "ref" },
-      { "key": "logger",    "target": "logger:service", "type": "ref" }
-    ]
-  },
   "etl-mk:kafka-producer": {
     "target": "KafkaProducerService",
     "type": "class",
@@ -45,10 +35,9 @@
     "lifetime": "transient",
     "path": "services",
     "dependencies": [
-      { "key": "assistant",         "target": "IoC",                    "type": "ref" },
-      { "key": "logger",            "target": "logger:service",         "type": "ref" },
-      { "key": "srvDelegateLoader", "target": "etl-mk:delegate-loader", "type": "ref" },
-      { "key": "srvKafkaProducer",  "target": "etl-mk:kafka-producer",  "type": "ref" }
+      { "key": "assistant",        "target": "IoC",                   "type": "ref" },
+      { "key": "logger",           "target": "logger:service",        "type": "ref" },
+      { "key": "srvKafkaProducer", "target": "etl-mk:kafka-producer", "type": "ref" }
     ]
   },
   "etl-mk:kafka-to-mongo": {
@@ -57,11 +46,11 @@
     "lifetime": "transient",
     "path": "services",
     "dependencies": [
-      { "key": "assistant",         "target": "IoC",                    "type": "ref" },
-      { "key": "logger",            "target": "logger:service",         "type": "ref" },
-      { "key": "srvDelegateLoader", "target": "etl-mk:delegate-loader", "type": "ref" },
-      { "key": "srvKafkaConsumer",  "target": "etl-mk:kafka-consumer",  "type": "ref" },
-      { "key": "srvMongoWriter",    "target": "etl-mk:mongo-writer",    "type": "ref" }
+      { "key": "assistant",        "target": "IoC",                   "type": "ref" },
+      { "key": "logger",           "target": "logger:service",        "type": "ref" },
+      { "key": "srvKafkaConsumer", "target": "etl-mk:kafka-consumer", "type": "ref" },
+      { "key": "srvKafkaProducer", "target": "etl-mk:kafka-producer", "type": "ref" },
+      { "key": "srvMongoWriter",   "target": "etl-mk:mongo-writer",   "type": "ref" }
     ]
   },
   "etl-mk:pipeline": {
@@ -70,10 +59,10 @@
     "lifetime": "transient",
     "path": "services",
     "dependencies": [
-      { "key": "assistant",       "target": "IoC",                    "type": "ref" },
-      { "key": "logger",          "target": "logger:service",         "type": "ref" },
-      { "key": "srvMongoToKafka", "target": "etl-mk:mongo-to-kafka",  "type": "ref" },
-      { "key": "srvKafkaToMongo", "target": "etl-mk:kafka-to-mongo",  "type": "ref" }
+      { "key": "assistant",       "target": "IoC",                   "type": "ref" },
+      { "key": "logger",          "target": "logger:service",        "type": "ref" },
+      { "key": "srvMongoToKafka", "target": "etl-mk:mongo-to-kafka", "type": "ref" },
+      { "key": "srvKafkaToMongo", "target": "etl-mk:kafka-to-mongo", "type": "ref" }
     ]
   }
 }

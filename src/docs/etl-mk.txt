@@ -1,0 +1,148 @@
+Description:
+    Bi-directional MongoDB ↔ Kafka ETL (Extract, Transform, Load) pipeline module for
+    the Kozen framework. Each direction is an independent process controlled by its own
+    delegate file.
+
+    MK process (KOZEN_ETL_MK_*): MongoDB change stream → Kafka topic
+    KM process (KOZEN_ETL_KM_*): Kafka topic → MongoDB collection
+
+    Omit a delegate to skip that direction. Both delegates may be active simultaneously
+    for a full bidirectional pipeline.
+
+Usage:
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:<action> [options]
+
+Available Actions:
+    start                               Start the configured ETL pipeline direction(s)
+    validate                            Check configuration without starting the pipeline
+    help                                Display this help message
+
+MK Pipeline Options (MongoDB → Kafka):
+    --mk.source.uri=<uri>               MongoDB connection string (REQUIRED)
+    --mk.source.database=<name>         MongoDB database name (REQUIRED)
+    --mk.source.collection=<name>       MongoDB collection to watch (REQUIRED)
+    --mk.destination.brokers=<list>     Comma-separated Kafka broker addresses (REQUIRED)
+    --mk.destination.topic=<name>       Kafka topic to publish to (REQUIRED)
+    --mk.destination.clientId=<id>      Kafka client ID (default: etl-mk)
+    --mk.destination.ssl=<true|false>   Enable TLS for Kafka (default: false)
+    --mk.delegateFile=<path>            Absolute path to MK delegate file (enables MK pipeline)
+    --mk.delegateKey=<key>              IoC key for MK delegate (default: etl-mk:delegate:source)
+    --mk.dlqTopic=<topic>               Dead-letter Kafka topic (default: <topic>-dlq)
+
+KM Pipeline Options (Kafka → MongoDB):
+    --km.source.brokers=<list>          Comma-separated Kafka broker addresses (REQUIRED)
+    --km.source.topic=<name>            Kafka topic to consume from (REQUIRED)
+    --km.source.groupId=<id>            Consumer group ID (default: etl-mk-group)
+    --km.source.clientId=<id>           Kafka client ID (default: etl-km)
+    --km.source.ssl=<true|false>        Enable TLS for Kafka (default: false)
+    --km.destination.uri=<uri>          MongoDB connection string (REQUIRED)
+    --km.destination.database=<name>    MongoDB database name (REQUIRED)
+    --km.destination.collection=<name>  MongoDB collection to write to (REQUIRED)
+    --km.delegateFile=<path>            Absolute path to KM delegate file (enables KM pipeline)
+    --km.delegateKey=<key>              IoC key for KM delegate (default: etl-mk:delegate:destination)
+    --km.writeMode=<insert|upsert>      MongoDB write mode (default: insert)
+    --km.dlqTopic=<topic>               Dead-letter Kafka topic (default: <topic>-dlq)
+    --km.retryAttempts=<n>              Max retries before DLQ routing (default: 3)
+    --km.retryDelayMs=<ms>              Initial retry delay in ms (default: 1000)
+                                        Backoff multiplier: delay × attempt number
+
+Common Options:
+    --delegateType=<esm|cjs>            Module format (auto-detected from file extension)
+
+Environment Variables (MK pipeline — MongoDB → Kafka):
+    KOZEN_ETL_MK_SOURCE_URI             → --mk.source.uri
+    KOZEN_ETL_MK_SOURCE_DATABASE        → --mk.source.database
+    KOZEN_ETL_MK_SOURCE_COLLECTION      → --mk.source.collection
+    KOZEN_ETL_MK_DESTINATION_BROKERS    → --mk.destination.brokers
+    KOZEN_ETL_MK_DESTINATION_TOPIC      → --mk.destination.topic
+    KOZEN_ETL_MK_DESTINATION_CLIENT_ID  → --mk.destination.clientId
+    KOZEN_ETL_MK_DESTINATION_SSL        → --mk.destination.ssl
+    KOZEN_ETL_MK_DELEGATE_FILE          → --mk.delegateFile
+    KOZEN_ETL_MK_DELEGATE_KEY           → --mk.delegateKey
+    KOZEN_ETL_MK_DLQ_TOPIC              → --mk.dlqTopic
+
+Environment Variables (KM pipeline — Kafka → MongoDB):
+    KOZEN_ETL_KM_SOURCE_BROKERS         → --km.source.brokers
+    KOZEN_ETL_KM_SOURCE_TOPIC           → --km.source.topic
+    KOZEN_ETL_KM_SOURCE_GROUP_ID        → --km.source.groupId
+    KOZEN_ETL_KM_SOURCE_CLIENT_ID       → --km.source.clientId
+    KOZEN_ETL_KM_SOURCE_SSL             → --km.source.ssl
+    KOZEN_ETL_KM_DESTINATION_URI        → --km.destination.uri
+    KOZEN_ETL_KM_DESTINATION_DATABASE   → --km.destination.database
+    KOZEN_ETL_KM_DESTINATION_COLLECTION → --km.destination.collection
+    KOZEN_ETL_KM_DELEGATE_FILE          → --km.delegateFile
+    KOZEN_ETL_KM_DELEGATE_KEY           → --km.delegateKey
+    KOZEN_ETL_KM_DESTINATION_WRITE_MODE → --km.writeMode
+    KOZEN_ETL_KM_DLQ_TOPIC              → --km.dlqTopic
+    KOZEN_ETL_KM_RETRY_ATTEMPTS         → --km.retryAttempts
+    KOZEN_ETL_KM_RETRY_DELAY_MS         → --km.retryDelayMs
+
+Common Environment Variables:
+    KOZEN_ETL_DELEGATE_TYPE             → --delegateType
+    KOZEN_LOG_LEVEL                     Log verbosity: DEBUG | INFO | WARN | ERROR (default: INFO)
+    KOZEN_LOG_TYPE                      Log format: object | json (default: object)
+
+MK Delegate (MongoDB → Kafka):
+    Export named functions matching MongoDB change stream operation types.
+    The return value becomes the Kafka message payload.
+    Return null or undefined to skip publishing for that event.
+
+    // delegates/orders.mjs
+    export async function insert(change, tools) {
+      return { id: change.fullDocument._id.toString(), status: change.fullDocument.status };
+    }
+    export async function update(change, tools) {
+      if (!change.updateDescription?.updatedFields?.status) return null;
+      return { id: change.documentKey._id.toString(), status: change.updateDescription.updatedFields.status };
+    }
+
+    Available operation types: insert, update, replace, delete, drop, rename,
+    dropDatabase, invalidate, createIndexes, dropIndexes. Use 'on' or 'default'
+    as a catch-all handler.
+
+    tools.setMessageKey('custom-key')             Override the Kafka message key
+    tools.setMessageHeaders({ 'x-src': 'etl' })  Add custom Kafka message headers
+
+KM Delegate (Kafka → MongoDB):
+    Export a 'message', 'on', or 'default' function.
+    The return value is the document written to MongoDB.
+    Return null or undefined to skip the write.
+
+    // delegates/archive.mjs
+    export async function message(msg, tools) {
+      return { ...msg, archivedAt: new Date(), source: tools.collectionName };
+    }
+
+Error Handling (Kafka → MongoDB):
+    On failure, the pipeline retries up to KOZEN_ETL_KM_RETRY_ATTEMPTS times with
+    exponential backoff (delay × attempt). After max retries, the message is published
+    to the dead-letter Kafka topic and the offset is committed. The offset is committed
+    only after a successful write or DLQ routing, ensuring at-least-once delivery.
+
+Examples:
+    # MK pipeline only: MongoDB → Kafka
+    KOZEN_ETL_MK_SOURCE_URI="mongodb+srv://user:pass@cluster/db" \
+    KOZEN_ETL_MK_SOURCE_DATABASE=mydb \
+    KOZEN_ETL_MK_SOURCE_COLLECTION=orders \
+    KOZEN_ETL_MK_DESTINATION_BROKERS=broker1:9092,broker2:9092 \
+    KOZEN_ETL_MK_DESTINATION_TOPIC=orders.events \
+    KOZEN_ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs \
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:start
+
+    # KM pipeline only: Kafka → MongoDB
+    KOZEN_ETL_KM_SOURCE_BROKERS=broker1:9092,broker2:9092 \
+    KOZEN_ETL_KM_SOURCE_TOPIC=orders.events \
+    KOZEN_ETL_KM_DESTINATION_URI="mongodb+srv://user:pass@cluster/db" \
+    KOZEN_ETL_KM_DESTINATION_DATABASE=mydb \
+    KOZEN_ETL_KM_DESTINATION_COLLECTION=orders_archive \
+    KOZEN_ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs \
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:start
+
+    # Bidirectional pipeline (both processes active simultaneously)
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
+
+    # Validate configuration
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:validate --envFile=.env
+
+    # Display help
+    kozen --moduleLoad=@kozen/etl-mk --action=etl:help
