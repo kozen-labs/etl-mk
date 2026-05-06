@@ -68,6 +68,7 @@ npx kozen --moduleLoad=@kozen/etl-mk --action=etl:help
 | [Delegate](https://github.com/kozen-labs/etl-mk/wiki/Delegate) | Writing MK and KM delegate handlers; error handling and DLQ |
 | [API](https://github.com/kozen-labs/etl-mk/wiki/API) | Programmatic SDK — types and service classes |
 | [Kozen Integration](https://github.com/kozen-labs/etl-mk/wiki/Kozen-Integration) | IoC tokens, module composition, delegate loading internals |
+| [Deployment](https://github.com/kozen-labs/etl-mk/wiki/Deployment) | Docker Compose stack: Kafka, MongoDB replica set, and ETL service — step-by-step |
 | [Contributing Policy](https://github.com/kozen-labs/etl-mk/wiki/POLICY) | Licence, disclaimer, branch model, code standards |
 
 **External resources:**
