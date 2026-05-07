@@ -29,19 +29,19 @@ export class KafkaConsumerService extends BaseService {
   }
 
   /**
-   * Subscribes to the topic from the latest offset; must be called after connect.
+   * Subscribes to the topic; must be called after connect.
    */
-  async subscribe(topic: string): Promise<void> {
+  async subscribe(topic: string, fromBeginning = true): Promise<void> {
     if (!this.consumer) throw new Error('KafkaConsumerService: not connected');
-    await this.consumer.subscribe({ topic, fromBeginning: true });
+    await this.consumer.subscribe({ topic, fromBeginning });
   }
 
   /**
-   * Starts the consumption loop with autoCommit disabled; commit must be called after each message.
+   * Starts the consumption loop; when autoCommit is false, commit must be called after each message.
    */
-  async run(handler: (payload: EachMessagePayload) => Promise<void>): Promise<void> {
+  async run(handler: (payload: EachMessagePayload) => Promise<void>, autoCommit = false): Promise<void> {
     if (!this.consumer) throw new Error('KafkaConsumerService: not connected');
-    await this.consumer.run({ autoCommit: false, eachMessage: handler });
+    await this.consumer.run({ autoCommit, eachMessage: handler });
   }
 
   /**

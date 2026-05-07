@@ -14,6 +14,8 @@ export interface IKafkaConfig {
   ssl?: boolean;
   sessionTimeout?: number;
   heartbeatInterval?: number;
+  fromBeginning?: boolean;
+  autoCommit?: boolean;
 }
 
 /**

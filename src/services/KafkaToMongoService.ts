@@ -62,7 +62,7 @@ export class KafkaToMongoService extends BaseService {
       km.source.ssl
     );
     await this.srvMongoWriter?.connect(km.destination.uri);
-    await this.srvKafkaConsumer?.subscribe(km.source.topic);
+    await this.srvKafkaConsumer?.subscribe(km.source.topic, km.source.fromBeginning);
 
     const db         = this.srvMongoWriter!.getDb(km.destination.database);
     const collection = db.collection(km.destination.collection);
@@ -84,7 +84,8 @@ export class KafkaToMongoService extends BaseService {
     });
 
     await this.srvKafkaConsumer?.run(
-      (payload) => this.onMessage(payload, delegate, tools, km)
+      (payload) => this.onMessage(payload, delegate, tools, km),
+      km.source.autoCommit
     );
   }
 

@@ -70,8 +70,10 @@ export class EtlCLIController extends CLIController {
     kmSrc['groupId']  = kmSrc['groupId']  ?? parsed['km.source.groupId']  ?? process.env['KOZEN_ETL_KM_SOURCE_GROUP_ID']  ?? 'etl-mk-group';
     kmSrc['clientId'] = kmSrc['clientId'] ?? parsed['km.source.clientId'] ?? process.env['KOZEN_ETL_KM_SOURCE_CLIENT_ID'] ?? 'etl-km';
     kmSrc['ssl']              = kmSrc['ssl']              ?? (process.env['KOZEN_ETL_KM_SOURCE_SSL'] === 'true');
-    kmSrc['sessionTimeout']   = kmSrc['sessionTimeout']   ?? Number(process.env['KOZEN_ETL_KM_SOURCE_SESSION_TIMEOUT']   ?? 60000);
+    kmSrc['sessionTimeout']    = kmSrc['sessionTimeout']    ?? Number(process.env['KOZEN_ETL_KM_SOURCE_SESSION_TIMEOUT']    ?? 60000);
     kmSrc['heartbeatInterval'] = kmSrc['heartbeatInterval'] ?? Number(process.env['KOZEN_ETL_KM_SOURCE_HEARTBEAT_INTERVAL'] ?? 5000);
+    kmSrc['fromBeginning']     = kmSrc['fromBeginning']     ?? (process.env['KOZEN_ETL_KM_SOURCE_FROM_BEGINNING'] !== 'false');
+    kmSrc['autoCommit']        = kmSrc['autoCommit']        ?? (process.env['KOZEN_ETL_KM_SOURCE_AUTO_COMMIT']    === 'true');
 
     km['destination'] = km['destination'] ?? {};
     const kmDst       = km['destination'] as Record<string, unknown>;
