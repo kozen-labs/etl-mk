@@ -1,5 +1,5 @@
 import { BaseService } from '@kozen/engine';
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, InsertOneResult, Document, UpdateResult } from 'mongodb';
 
 /**
  * Manages a MongoClient for document writes; one instance per KM pipeline run (transient).
@@ -36,15 +36,17 @@ export class MongoWriterService extends BaseService {
     collectionName: string,
     document: Record<string, unknown>,
     writeMode: 'insert' | 'upsert' = 'insert'
-  ): Promise<void> {
+  ): Promise<InsertOneResult<Document> | UpdateResult> {
     const collection = this.getDb(dbName).collection(collectionName);
 
+    // If writeMode is 'upsert' and document has an _id, perform an upsert; otherwise, insert a new document
     if (writeMode === 'upsert' && document['_id']) {
       const { _id, ...rest } = document;
-      await collection.updateOne({ _id }, { $set: rest }, { upsert: true });
-    } else {
-      await collection.insertOne(document);
+      return await collection.updateOne({ _id }, { $set: rest }, { upsert: true });
     }
+
+    // Default to insertOne for new documents or when _id is not provided
+    return await collection.insertOne(document);
   }
 
   /**

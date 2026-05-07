@@ -12,6 +12,8 @@ export interface IKafkaConfig {
   groupId?: string;
   clientId?: string;
   ssl?: boolean;
+  sessionTimeout?: number;
+  heartbeatInterval?: number;
 }
 
 /**

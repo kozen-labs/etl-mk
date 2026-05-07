@@ -1,5 +1,6 @@
 import { BaseService } from '@kozen/engine';
 import { randomUUID } from 'crypto';
+import { KafkaJSNonRetriableError } from 'kafkajs';
 import type { EachMessagePayload } from 'kafkajs';
 import type { ITriggerTools } from '@kozen/trigger';
 import type { KafkaConsumerService } from './KafkaConsumerService';
@@ -49,9 +50,11 @@ export class KafkaToMongoService extends BaseService {
 
     await this.srvKafkaConsumer?.connect(
       km.source.brokers,
-      km.source.groupId  ?? 'etl-mk-group',
-      km.source.clientId ?? 'etl-km',
-      km.source.ssl
+      km.source.groupId        ?? 'etl-mk-group',
+      km.source.clientId       ?? 'etl-km',
+      km.source.ssl,
+      km.source.sessionTimeout,
+      km.source.heartbeatInterval
     );
     await this.srvMongoWriter?.connect(km.destination.uri);
     await this.srvKafkaConsumer?.subscribe(km.source.topic);
@@ -110,7 +113,7 @@ export class KafkaToMongoService extends BaseService {
         src: 'EtlMk:KafkaToMongo:onMessage',
         message: 'No handler defined in KM delegate'
       });
-      await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
+      await this.commitSafe(payload.topic, payload.partition, nextOffset, eventFlow);
       return;
     }
 
@@ -124,7 +127,7 @@ export class KafkaToMongoService extends BaseService {
         ) => Promise<unknown>).call(this, rawPayload, { ...tools, flow: eventFlow });
 
         if (document !== null && document !== undefined) {
-          await this.srvMongoWriter?.write(
+          let result =await this.srvMongoWriter?.write(
             km.destination.database,
             km.destination.collection,
             document as Record<string, unknown>,
@@ -134,12 +137,11 @@ export class KafkaToMongoService extends BaseService {
             flow: eventFlow,
             src: 'EtlMk:KafkaToMongo:onMessage',
             message: 'Message written',
-            data: { collection: km.destination.collection }
+            data: { collection: km.destination.collection, database: km.destination.database, result }
           });
         }
 
-        await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
-        return;
+        break;
 
       } catch (error: unknown) {
         attempts++;
@@ -158,8 +160,7 @@ export class KafkaToMongoService extends BaseService {
             flow: eventFlow,
             timestamp: new Date()
           });
-          await this.srvKafkaConsumer?.commit(payload.topic, payload.partition, nextOffset);
-          return;
+          break;
         }
 
         this.logger?.warn({
@@ -170,6 +171,29 @@ export class KafkaToMongoService extends BaseService {
         });
         await this.delay(retryDelayMs * attempts);
       }
+    }
+
+    await this.commitSafe(payload.topic, payload.partition, nextOffset, eventFlow);
+  }
+
+  /**
+   * Commits an offset and absorbs rebalance errors (UNKNOWN_MEMBER_ID, ILLEGAL_GENERATION).
+   * These errors mean the consumer left the group; the message will be redelivered after rejoin.
+   */
+  private async commitSafe(topic: string, partition: number, offset: string, flow: string): Promise<void> {
+    try {
+      await this.srvKafkaConsumer?.commit(topic, partition, offset);
+    } catch (error: unknown) {
+      if (error instanceof KafkaJSNonRetriableError) {
+        this.logger?.warn({
+          flow,
+          src: 'EtlMk:KafkaToMongo:commit',
+          message: 'Offset commit skipped after group rebalance; message will be redelivered.',
+          data: { error: (error as Error).message }
+        });
+        return;
+      }
+      throw error;
     }
   }
 

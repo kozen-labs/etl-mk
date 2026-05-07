@@ -10,14 +10,21 @@ export class KafkaConsumerService extends BaseService {
   /**
    * Creates and connects the KafkaJS consumer with the given group and broker list.
    */
-  async connect(brokers: string[], groupId: string, clientId: string, ssl = false): Promise<void> {
+  async connect(
+    brokers: string[],
+    groupId: string,
+    clientId: string,
+    ssl = false,
+    sessionTimeout = 60000,
+    heartbeatInterval = 5000
+  ): Promise<void> {
     const kafka = new Kafka({ clientId, brokers, ssl, logLevel: logLevel.NOTHING });
-    this.consumer = kafka.consumer({ groupId });
+    this.consumer = kafka.consumer({ groupId, sessionTimeout, heartbeatInterval });
     await this.consumer.connect();
     this.logger?.info({
       src: 'EtlMk:KafkaConsumer:connect',
       message: 'Kafka consumer connected',
-      data: { brokers, groupId, clientId }
+      data: { brokers, groupId, clientId, sessionTimeout, heartbeatInterval }
     });
   }
 
@@ -26,7 +33,7 @@ export class KafkaConsumerService extends BaseService {
    */
   async subscribe(topic: string): Promise<void> {
     if (!this.consumer) throw new Error('KafkaConsumerService: not connected');
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    await this.consumer.subscribe({ topic, fromBeginning: true });
   }
 
   /**
