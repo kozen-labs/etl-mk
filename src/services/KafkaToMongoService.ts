@@ -56,6 +56,11 @@ export class KafkaToMongoService extends BaseService {
       km.source.sessionTimeout,
       km.source.heartbeatInterval
     );
+    await this.srvKafkaProducer?.connect(
+      km.source.brokers,
+      km.source.clientId ?? 'etl-km',
+      km.source.ssl
+    );
     await this.srvMongoWriter?.connect(km.destination.uri);
     await this.srvKafkaConsumer?.subscribe(km.source.topic);
 
@@ -154,12 +159,21 @@ export class KafkaToMongoService extends BaseService {
             message: `Max retries (${maxAttempts}) exceeded. Routing to DLQ.`,
             data: { dlqTopic, error: msg }
           });
-          await this.srvKafkaProducer?.publishDLQ(dlqTopic, {
-            originalMessage: rawPayload,
-            error: msg,
-            flow: eventFlow,
-            timestamp: new Date()
-          });
+          try {
+            await this.srvKafkaProducer?.publishDLQ(dlqTopic, {
+              originalMessage: rawPayload,
+              error: msg,
+              flow: eventFlow,
+              timestamp: new Date()
+            });
+          } catch (dlqError: unknown) {
+            this.logger?.error({
+              flow: eventFlow,
+              src: 'EtlMk:KafkaToMongo:onMessage',
+              message: 'DLQ routing failed; message will be skipped.',
+              data: { dlqTopic, error: (dlqError as Error).message }
+            });
+          }
           break;
         }
 
