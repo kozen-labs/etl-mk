@@ -10,7 +10,7 @@ import ioc from './configs/ioc.json';
 export class EtlModule extends KzModule {
   constructor(dependency?: unknown) {
     super(dependency as never);
-    this.metadata.alias = 'etl';
+    this.metadata.alias = 'etl-mk';
     try {
       // sync read is acceptable here: constructor runs once at startup for a single small file
       const pkg = JSON.parse(
