@@ -35,6 +35,15 @@ KM Pipeline Options (Kafka → MongoDB):
     --km.source.groupId=<id>            Consumer group ID (default: etl-mk-group)
     --km.source.clientId=<id>           Kafka client ID (default: etl-km)
     --km.source.ssl=<true|false>        Enable TLS for Kafka (default: false)
+    --km.source.sessionTimeout=<ms>     Consumer session timeout in ms (default: 60000)
+                                        Increase when message processing + retries exceed 60s
+    --km.source.heartbeatInterval=<ms>  Consumer heartbeat interval in ms (default: 5000)
+                                        Must be lower than sessionTimeout
+    --km.source.fromBeginning=<bool>    Consume from first available offset (default: true)
+                                        Set false to start from the latest offset
+    --km.source.autoCommit=<bool>       Let KafkaJS commit offsets automatically (default: false)
+                                        When false, offsets are committed manually after each write
+                                        or DLQ routing, guaranteeing at-least-once delivery
     --km.destination.uri=<uri>          MongoDB connection string (REQUIRED)
     --km.destination.database=<name>    MongoDB database name (REQUIRED)
     --km.destination.collection=<name>  MongoDB collection to write to (REQUIRED)
@@ -62,11 +71,15 @@ Environment Variables (MK pipeline — MongoDB → Kafka):
     KOZEN_ETL_MK_DLQ_TOPIC              → --mk.dlqTopic
 
 Environment Variables (KM pipeline — Kafka → MongoDB):
-    KOZEN_ETL_KM_SOURCE_BROKERS         → --km.source.brokers
-    KOZEN_ETL_KM_SOURCE_TOPIC           → --km.source.topic
-    KOZEN_ETL_KM_SOURCE_GROUP_ID        → --km.source.groupId
-    KOZEN_ETL_KM_SOURCE_CLIENT_ID       → --km.source.clientId
-    KOZEN_ETL_KM_SOURCE_SSL             → --km.source.ssl
+    KOZEN_ETL_KM_SOURCE_BROKERS              → --km.source.brokers
+    KOZEN_ETL_KM_SOURCE_TOPIC                → --km.source.topic
+    KOZEN_ETL_KM_SOURCE_GROUP_ID             → --km.source.groupId
+    KOZEN_ETL_KM_SOURCE_CLIENT_ID            → --km.source.clientId
+    KOZEN_ETL_KM_SOURCE_SSL                  → --km.source.ssl
+    KOZEN_ETL_KM_SOURCE_SESSION_TIMEOUT      → --km.source.sessionTimeout    (default: 60000)
+    KOZEN_ETL_KM_SOURCE_HEARTBEAT_INTERVAL   → --km.source.heartbeatInterval  (default: 5000)
+    KOZEN_ETL_KM_SOURCE_FROM_BEGINNING       → --km.source.fromBeginning      (default: true)
+    KOZEN_ETL_KM_SOURCE_AUTO_COMMIT          → --km.source.autoCommit         (default: false)
     KOZEN_ETL_KM_DESTINATION_URI        → --km.destination.uri
     KOZEN_ETL_KM_DESTINATION_DATABASE   → --km.destination.database
     KOZEN_ETL_KM_DESTINATION_COLLECTION → --km.destination.collection
