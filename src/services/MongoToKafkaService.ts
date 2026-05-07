@@ -34,21 +34,42 @@ export class MongoToKafkaService extends ChangeStreamService {
 
     this.mk = mk;
 
-    await this.srvKafkaProducer?.connect(
-      mk.destination.brokers,
-      mk.destination.clientId ?? 'etl-mk',
-      mk.destination.ssl
-    );
+    try {
+      await this.srvKafkaProducer?.connect(
+        mk.destination.brokers,
+        mk.destination.clientId ?? 'etl-mk',
+        mk.destination.ssl
+      );
+    } catch (error: unknown) {
+      this.logger?.error({
+        flow: options.flow,
+        src: 'EtlMk:MongoToKafka:start',
+        message: 'Failed to connect to Kafka. MongoDB→Kafka pipeline will not start.',
+        data: { error: (error as Error).message }
+      });
+      throw new Error('Kafka connection failed' + (error instanceof Error ? `: ${error.message}` : ''));
+    }
 
-    await super.start({
-      flow: options.flow ?? randomUUID(),
-      mdb: {
-        uri:        mk.source.uri,
-        database:   mk.source.database,
-        collection: mk.source.collection
-      },
-      opt: mk.delegate
-    });
+    try {
+      await super.start({
+        flow: options.flow ?? randomUUID(),
+        mdb: {
+          uri: mk.source.uri,
+          database: mk.source.database,
+          collection: mk.source.collection
+        },
+        opt: mk.delegate
+      });
+    } catch (error: unknown) {
+      this.logger?.error({
+        flow: options.flow,
+        src: 'EtlMk:MongoToKafka:start',
+        message: 'Failed to start MongoDB change stream.',
+        data: { error: (error as Error).message }
+      });
+      await this.srvKafkaProducer?.disconnect();
+      throw new Error('Failed to start MongoDB change stream' + (error instanceof Error ? `: ${error.message}` : ''));
+    }
   }
 
   /**
@@ -67,18 +88,18 @@ export class MongoToKafkaService extends ChangeStreamService {
     const docKey = (change as unknown as Record<string, unknown>)['documentKey'] as
       | Record<string, unknown>
       | undefined;
-    let messageKey     = docKey ? String(docKey['_id'] ?? randomUUID()) : randomUUID();
+    let messageKey = docKey ? String(docKey['_id'] ?? randomUUID()) : randomUUID();
     let messageHeaders: Record<string, string> = {};
 
     const etlTools: IEtlMongoToKafkaTools = {
       ...(tools ?? {}),
-      setMessageKey:     (k) => { messageKey = k; },
+      setMessageKey: (k) => { messageKey = k; },
       setMessageHeaders: (h) => { messageHeaders = h; }
     } as IEtlMongoToKafkaTools;
 
     const specificHandler = delegate[change.operationType as keyof ITriggerDelegate];
     const fallback = delegate.on ?? delegate.default;
-    const handler  = typeof specificHandler === 'function' ? specificHandler : fallback;
+    const handler = typeof specificHandler === 'function' ? specificHandler : fallback;
 
     if (typeof handler !== 'function') {
       this.logger?.warn({

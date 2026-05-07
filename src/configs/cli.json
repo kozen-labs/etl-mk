@@ -1,5 +1,5 @@
 {
-  "etl:controller:cli": {
+  "etl-mk:controller:cli": {
     "target": "EtlCLIController",
     "type": "class",
     "lifetime": "transient",
