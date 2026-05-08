@@ -1,6 +1,6 @@
 {
   "name": "@kozen/etl-mk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Bi-directional MongoDB ↔ Kafka ETL pipeline module for the Kozen framework",
   "homepage": "https://github.com/kozen-labs/etl-mk/wiki",
   "bugs": {

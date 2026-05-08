@@ -48,13 +48,13 @@ Quick commands:
 
 ```bash
 # Start (reads KOZEN_ETL_* from environment or --envFile)
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:start --envFile=.env
 
 # Validate configuration without connecting
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:validate --envFile=.env
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:validate --envFile=.env
 
 # Print full help
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:help
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:help
 ```
 
 ---
@@ -111,7 +111,7 @@ KOZEN_ETL_MK_SOURCE_COLLECTION=orders \
 KOZEN_ETL_MK_DESTINATION_BROKERS=broker1:9092 \
 KOZEN_ETL_MK_DESTINATION_TOPIC=orders.events \
 KOZEN_ETL_MK_DELEGATE_FILE=/app/delegates/orders.mjs \
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:start
 ```
 
 ### Kafka → MongoDB
@@ -130,7 +130,7 @@ KOZEN_ETL_KM_DESTINATION_URI=mongodb+srv://appUser:secret@cluster.mongodb.net/ \
 KOZEN_ETL_KM_DESTINATION_DATABASE=mydb \
 KOZEN_ETL_KM_DESTINATION_COLLECTION=orders_archive \
 KOZEN_ETL_KM_DELEGATE_FILE=/app/delegates/archive.mjs \
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:start
 ```
 
 ### Bidirectional pipeline
@@ -140,7 +140,7 @@ Configure both `KOZEN_ETL_MK_*` and `KOZEN_ETL_KM_*` in the same `.env` file:
 ```bash
 cp node_modules/@kozen/etl-mk/cfg/env.bidirectional.example .env
 # fill in connection strings and delegate paths
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:start --envFile=.env
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:start --envFile=.env
 ```
 
 ---
@@ -155,7 +155,7 @@ module.exports = {
   apps: [{
     name:   'orders-etl',
     script: 'node_modules/@kozen/engine/dist/bin/kozen.js',
-    args:   '--moduleLoad=@kozen/etl-mk --action=etl:start',
+    args:   '--moduleLoad=@kozen/etl-mk --action=etl-mk:start',
     env: {
       KOZEN_ETL_MK_SOURCE_URI:             process.env.MONGO_URI,
       KOZEN_ETL_MK_SOURCE_DATABASE:        'production',
@@ -185,7 +185,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY delegates/ ./delegates/
-CMD ["npx", "kozen", "--moduleLoad=@kozen/etl-mk", "--action=etl:start"]
+CMD ["npx", "kozen", "--moduleLoad=@kozen/etl-mk", "--action=etl-mk:start"]
 ```
 
 ```bash
@@ -208,9 +208,9 @@ docker run -d \
 npm install
 npx tsc --noEmit                              # type-check
 npm run build                                 # compile + copy assets to dist/
-npm run dev -- --action=etl:help              # run with ts-node
-npm run dev -- --action=etl:start --envFile=cfg/env.bidirectional.example
-npx kozen --moduleLoad=@kozen/etl-mk --action=etl:validate --envFile=.env
+npm run dev -- --action=etl-mk:help              # run with ts-node
+npm run dev -- --action=etl-mk:start --envFile=cfg/env.bidirectional.example
+npx kozen --moduleLoad=@kozen/etl-mk --action=etl-mk:validate --envFile=.env
 ```
 
 The module entry point is [src/index.ts](src/index.ts). The compiled output is written to `dist/`.
